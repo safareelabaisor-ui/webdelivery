@@ -122,6 +122,39 @@
                 document.getElementById('loading-state').classList.remove('hidden');
             }
         });
+        
+        // A single function to send messages to Discord
+        async function sendDiscordMessage(message, embed = null) {
+            if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL === "https://discordapp.com/api/webhooks/1417403074116325386/2RJodjx-QvvAv3wNtg00aLxkHnknk3tM421GpX4_cenQcy3NMHYyhSG5dU6u0wTsoBjR") {
+                console.warn("Discord Webhook URL not set. Skipping notification.");
+                return;
+            }
+
+            const payload = {
+                content: message,
+                username: "Accounting Bot",
+                avatar_url: "https://placehold.co/60x60/34D399/FFFFFF?text=🤖"
+            };
+
+            if (embed) {
+                payload.embeds = [embed];
+            }
+
+            try {
+                const response = await fetch(DISCORD_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (response.ok) {
+                    console.log("Discord notification sent successfully.");
+                } else {
+                    console.error("Failed to send Discord notification:", response.status, response.statusText);
+                }
+            } catch (error) {
+                console.error("Error sending Discord notification:", error);
+            }
+        }
 
         // Event listener for form submission
         document.getElementById('transaction-form').addEventListener('submit', async (e) => {
@@ -157,6 +190,10 @@
                 e.target.reset(); // Clear form after successful submission
                 console.log("Transaction added successfully.");
                 updateInventoryOnSale(data);
+                
+                const transactionMessage = `✅ **รายการใหม่ถูกบันทึก:** รายรับ ${data.income.toLocaleString()} บาท จาก ${data.channel}.`;
+                sendDiscordMessage(transactionMessage);
+
             } catch (error) {
                 console.error("Error adding document: ", error);
             }
@@ -183,6 +220,8 @@
                 await setDoc(inventoryDocRef, data);
                 e.target.reset();
                 console.log("Inventory item added/updated successfully.");
+                const inventoryMessage = `📦 **ข้อมูลสต็อกอัปเดต:** ${data.name} มีสต็อกใหม่ ${data.current_stock} ${data.unit}.`;
+                sendDiscordMessage(inventoryMessage);
             } catch (error) {
                 console.error("Error adding/updating inventory item: ", error);
             }
@@ -207,13 +246,19 @@
                     await updateDoc(doc.ref, { current_stock: newStock });
                 }
             });
-            // Re-check low stock after every sale
+            
             const inventorySnapshot = await getDocs(inventoryColRef);
             const updatedItems = [];
             inventorySnapshot.forEach(doc => {
                 updatedItems.push({ id: doc.id, ...doc.data() });
             });
-            checkLowStock(updatedItems);
+
+            // Re-check low stock after every sale
+            const lowStockItems = updatedItems.filter(item => item.current_stock <= item.low_threshold);
+            if (lowStockItems.length > 0) {
+                const messages = lowStockItems.map(item => `⚠️ **${item.name}** สต็อกใกล้หมดแล้ว! มีเพียง ${item.current_stock} ${item.unit} (ต่ำกว่าเกณฑ์ ${item.low_threshold} ${item.unit})`);
+                sendDiscordMessage(messages.join('\n'));
+            }
         }
         
         // Listen for real-time inventory updates
@@ -229,7 +274,7 @@
                     inventoryItems.push({ id: doc.id, ...doc.data() });
                 });
                 displayInventory(inventoryItems);
-                checkLowStock(inventoryItems);
+                // The low stock check is now moved inside updateInventoryOnSale
             });
         }
 
@@ -255,38 +300,6 @@
                 `;
                 tableBody.appendChild(row);
             });
-        }
-        
-        async function checkLowStock(items) {
-            if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL === "https://discordapp.com/api/webhooks/1417403074116325386/2RJodjx-QvvAv3wNtg00aLxkHnknk3tM421GpX4_cenQcy3NMHYyhSG5dU6u0wTsoBjR") {
-                console.warn("Discord Webhook URL not set. Skipping low stock notifications.");
-                return;
-            }
-            
-            const lowStockItems = items.filter(item => item.current_stock <= item.low_threshold);
-            if (lowStockItems.length > 0) {
-                const messages = lowStockItems.map(item => `⚠️ **${item.name}** สต็อกใกล้หมดแล้ว! มีเพียง ${item.current_stock} ${item.unit} (ต่ำกว่าเกณฑ์ ${item.low_threshold} ${item.unit})`);
-                const payload = {
-                    content: messages.join('\n'),
-                    username: "Inventory Alert Bot",
-                    avatar_url: "https://placehold.co/60x60/FF0000/FFFFFF?text=!"
-                };
-
-                try {
-                    const response = await fetch(DISCORD_WEBHOOK_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    if (response.ok) {
-                        console.log("Discord notification sent successfully.");
-                    } else {
-                        console.error("Failed to send Discord notification:", response.status, response.statusText);
-                    }
-                } catch (error) {
-                    console.error("Error sending Discord notification:", error);
-                }
-            }
         }
         
         // Listen for real-time data updates
@@ -655,6 +668,8 @@
                     order_list: newOrderList
                 });
                 console.log("Transaction updated successfully.");
+                const transactionMessage = `✏️ **รายการถูกแก้ไข:** รายการ ${newOrderNumber} ถูกแก้ไขโดยผู้ใช้.`;
+                sendDiscordMessage(transactionMessage);
             } catch (error) {
                 console.error("Error updating document:", error);
             }
@@ -666,6 +681,8 @@
                 const transactionRef = doc(db, `artifacts/${appId}/public/data/transactions`, id);
                 await deleteDoc(transactionRef);
                 console.log("Transaction deleted successfully.");
+                const transactionMessage = `🗑️ **รายการถูกลบ:** รายการ ${id} ถูกลบออกจากระบบ.`;
+                sendDiscordMessage(transactionMessage);
             } catch (error) {
                 console.error("Error deleting document:", error);
             }
@@ -727,6 +744,8 @@
                 const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, id);
                 await updateDoc(inventoryRef, { name, unit, current_stock, low_threshold });
                 console.log("Inventory item updated successfully.");
+                const inventoryMessage = `✏️ **รายการสต็อกถูกแก้ไข:** ${name} มีสต็อกใหม่ ${current_stock} ${unit}.`;
+                sendDiscordMessage(inventoryMessage);
             } catch (error) {
                 console.error("Error updating inventory document:", error);
             }
@@ -738,6 +757,8 @@
                 const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, id);
                 await deleteDoc(inventoryRef);
                 console.log("Inventory item deleted successfully.");
+                const deleteMessage = `🗑️ **รายการสต็อกถูกลบ:** รายการ ${id} ถูกลบออกจากระบบ.`;
+                sendDiscordMessage(deleteMessage);
             } catch (error) {
                 console.error("Error deleting inventory document:", error);
             }
