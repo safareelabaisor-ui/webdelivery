@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>บัญชีเดลิเวอรี่ รายรับ-รายจ่าย ร้านโครตจะแมน</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         .modal {
             display: none;
@@ -37,7 +39,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, query, where, getDocs, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase configuration
@@ -57,7 +59,8 @@
         let auth = null;
         let db = null;
         let userId = null;
-
+        let myChart = null;
+        
         document.addEventListener('DOMContentLoaded', async () => {
             if (Object.keys(firebaseConfig).length > 0) {
                 app = initializeApp(firebaseConfig);
@@ -81,7 +84,8 @@
                         loginContent.classList.add('hidden');
                         mainContent.classList.remove('hidden');
                         logoutBtn.classList.remove('hidden');
-                        setupDataListener();
+                        setupDataListeners();
+                        populateMonthYearSelects();
                     } else {
                         console.log("No user signed in.");
                         loadingState.classList.add('hidden');
@@ -128,12 +132,9 @@
             const data = {
                 timestamp: new Date(),
                 date: formData.get('date'),
-                channel: formData.get('channel'),
-                order_number: formData.get('order_number'),
-                buyer_name: formData.get('buyer_name'),
-                driver_name: formData.get('driver_name'),
                 item: formData.get('item'),
                 order_list: formData.get('order_list'),
+                channel: formData.get('channel'),
                 income: parseFloat(formData.get('income')) || 0,
                 gp_fee_excl_vat: parseFloat(formData.get('gp_fee_excl_vat')) || 0,
                 shipping_discount_fee_excl_vat: parseFloat(formData.get('shipping_discount_fee_excl_vat')) || 0,
@@ -141,65 +142,258 @@
                 raw_material_cost: parseFloat(formData.get('raw_material_cost')) || 0,
                 expense: parseFloat(formData.get('expense')) || 0,
                 note: formData.get('note'),
-                userId: userId
+                buyer_name: formData.get('buyer_name'),
+                order_id: formData.get('order_id'),
+                order_number: formData.get('order_number'),
+                driver_name: formData.get('driver_name')
             };
 
             try {
-                const transactionDocRef = doc(db, `artifacts/${appId}/users/${userId}/data/summary`);
-                await setDoc(transactionDocRef, data, { merge: true });
-                console.log("Data saved successfully.");
+                const transactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
+                await addDoc(transactionsColRef, data);
+                e.target.reset(); // Clear form after successful submission
+                console.log("Transaction added successfully.");
             } catch (error) {
-                console.error("Error saving document: ", error);
+                console.error("Error adding document: ", error);
             }
         });
 
-        // Listen for real-time data updates for a single document
-        function setupDataListener() {
+        // Listen for real-time data updates
+        function setupDataListeners() {
             if (!db || !userId) {
                 console.error("Firebase is not initialized or user is not authenticated.");
                 return;
             }
 
-            const transactionDocRef = doc(db, `artifacts/${appId}/users/${userId}/data/summary`);
-            
-            onSnapshot(transactionDocRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    displayData(docSnap.data());
-                } else {
-                    console.log("No data found, starting with a blank form.");
-                    // No need to clear form, it should start blank
-                }
+            const transactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
+            const q = query(transactionsColRef);
+
+            onSnapshot(q, (querySnapshot) => {
+                let transactions = [];
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    transactions.push({ id: doc.id, ...data, timestamp: data.timestamp ? data.timestamp.toDate() : new Date() });
+                });
+
+                // Sort transactions by date and timestamp in memory
+                transactions.sort((a, b) => {
+                    const dateA = new Date(a.date);
+                    const dateB = new Date(b.date);
+                    if (dateA - dateB !== 0) {
+                        return dateA - dateB;
+                    }
+                    return a.timestamp - b.timestamp;
+                });
+
+                displayTransactions(transactions);
+                updateMonthlySummary(transactions);
+                updateChart(transactions);
             }, (error) => {
-                console.error("Error listening to document:", error);
+                console.error("Error listening to transactions:", error);
             });
         }
+
+        // Populate month and year dropdowns
+        function populateMonthYearSelects() {
+            const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            const monthSelect = document.getElementById('summary-month');
+            const yearSelect = document.getElementById('summary-year');
+            const currentYear = new Date().getFullYear();
+            const currentMonth = new Date().getMonth();
+
+            monthSelect.innerHTML = '';
+            yearSelect.innerHTML = '';
+
+            for (let i = 0; i < months.length; i++) {
+                const option = document.createElement('option');
+                option.value = i + 1;
+                option.textContent = months[i];
+                if (i === currentMonth) {
+                    option.selected = true;
+                }
+                monthSelect.appendChild(option);
+            }
+
+            for (let i = currentYear - 5; i <= currentYear; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = i;
+                if (i === currentYear) {
+                    option.selected = true;
+                }
+                yearSelect.appendChild(option);
+            }
+
+            monthSelect.addEventListener('change', () => setupDataListeners());
+            yearSelect.addEventListener('change', () => setupDataListeners());
+        }
         
-        // Display data in the form and update summary
-        function displayData(data) {
-            document.getElementById('date').value = data.date || '';
-            document.getElementById('channel').value = data.channel || '';
-            document.getElementById('order_number').value = data.order_number || '';
-            document.getElementById('buyer_name').value = data.buyer_name || '';
-            document.getElementById('driver_name').value = data.driver_name || '';
-            document.getElementById('item').value = data.item || '';
-            document.getElementById('order_list').value = data.order_list || '';
-            document.getElementById('income').value = (data.income || 0).toFixed(2);
-            document.getElementById('gp_fee_excl_vat').value = (data.gp_fee_excl_vat || 0).toFixed(2);
-            document.getElementById('shipping_discount_fee_excl_vat').value = (data.shipping_discount_fee_excl_vat || 0).toFixed(2);
-            document.getElementById('vat_amount').value = (data.vat_amount || 0).toFixed(2);
-            document.getElementById('raw_material_cost').value = (data.raw_material_cost || 0).toFixed(2);
-            document.getElementById('expense').value = (data.expense || 0).toFixed(2);
-            document.getElementById('note').value = data.note || '';
+        // Update monthly summary
+        function updateMonthlySummary(transactions = []) {
+            const selectedMonth = parseInt(document.getElementById('summary-month').value);
+            const selectedYear = parseInt(document.getElementById('summary-year').value);
 
-            const totalIncome = (data.income || 0);
-            const totalExpense = (data.expense || 0) + (data.gp_fee_excl_vat || 0) + (data.shipping_discount_fee_excl_vat || 0) + (data.vat_amount || 0) + (data.raw_material_cost || 0);
-            const totalProfit = totalIncome - totalExpense;
+            let monthlyIncome = 0;
+            let monthlyExpense = 0;
 
-            document.getElementById('total-income').textContent = totalIncome.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('total-expense').textContent = totalExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('total-profit').textContent = totalProfit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('total-profit').classList.remove('text-teal-600', 'text-rose-600');
-            document.getElementById('total-profit').classList.add(totalProfit >= 0 ? 'text-teal-600' : 'text-rose-600');
+            transactions.forEach(transaction => {
+                const transactionDate = new Date(transaction.date);
+                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
+
+                if (transactionDate.getMonth() + 1 === selectedMonth && transactionDate.getFullYear() === selectedYear) {
+                    monthlyIncome += (transaction.income || 0);
+                    monthlyExpense += totalTransactionExpense;
+                }
+            });
+
+            document.getElementById('monthly-income').textContent = monthlyIncome.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('monthly-expense').textContent = monthlyExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const monthlyProfit = monthlyIncome - monthlyExpense;
+            document.getElementById('monthly-profit').textContent = monthlyProfit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('monthly-profit').classList.remove('text-emerald-600', 'text-rose-600');
+            document.getElementById('monthly-profit').classList.add(monthlyProfit >= 0 ? 'text-emerald-600' : 'text-rose-600');
+        }
+
+        // Update the chart
+        function updateChart(transactions = []) {
+            const monthlyData = transactions.reduce((acc, transaction) => {
+                const transactionDate = new Date(transaction.date);
+                const month = transactionDate.getMonth() + 1;
+                const year = transactionDate.getFullYear();
+                const key = `${year}-${month}`;
+
+                if (!acc[key]) {
+                    acc[key] = { income: 0, expense: 0, date: transactionDate };
+                }
+
+                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
+                acc[key].income += (transaction.income || 0);
+                acc[key].expense += totalTransactionExpense;
+
+                return acc;
+            }, {});
+
+            const sortedKeys = Object.keys(monthlyData).sort();
+            const labels = sortedKeys.map(key => {
+                const [year, month] = key.split('-');
+                return `เดือน ${month}/${year}`;
+            });
+            const incomeData = sortedKeys.map(key => monthlyData[key].income);
+            const expenseData = sortedKeys.map(key => monthlyData[key].expense);
+
+            const chartData = {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'รายรับ',
+                        data: incomeData,
+                        borderColor: 'rgb(16, 185, 129)', // Tailwind's green-500
+                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                        tension: 0.1,
+                        fill: true
+                    },
+                    {
+                        label: 'รายจ่าย',
+                        data: expenseData,
+                        borderColor: 'rgb(244, 63, 94)', // Tailwind's rose-500
+                        backgroundColor: 'rgba(244, 63, 94, 0.2)',
+                        tension: 0.1,
+                        fill: true
+                    }
+                ]
+            };
+
+            if (myChart) {
+                myChart.data = chartData;
+                myChart.update();
+            } else {
+                const ctx = document.getElementById('myChart').getContext('2d');
+                myChart = new Chart(ctx, {
+                    type: 'line',
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        label += context.parsed.y.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' บาท';
+                                        return label;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value, index, ticks) {
+                                        return value.toLocaleString('th-TH') + ' บาท';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Display transactions in the table and update summary
+        function displayTransactions(transactions) {
+            const tableBody = document.getElementById('transaction-table-body');
+            const totalIncomeEl = document.getElementById('total-income');
+            const totalExpenseEl = document.getElementById('total-expense');
+            const totalProfitEl = document.getElementById('total-profit');
+
+            tableBody.innerHTML = '';
+            let totalIncome = 0;
+            let totalExpense = 0;
+
+            if (transactions.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="16" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลการทำธุรกรรม</td></tr>`;
+            }
+
+            transactions.forEach(transaction => {
+                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
+                totalIncome += (transaction.income || 0);
+                totalExpense += totalTransactionExpense;
+
+                const profit = (transaction.income || 0) - totalTransactionExpense;
+                const row = document.createElement('tr');
+                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
+                row.innerHTML = `
+                    <td class="px-4 py-2 border-b whitespace-nowrap">${transaction.date.split('T')[0]}</td>
+                    <td class="px-4 py-2 border-b">${transaction.channel || ''}</td>
+                    <td class="px-4 py-2 border-b">${transaction.order_number || ''}</td>
+                    <td class="px-4 py-2 border-b">${transaction.buyer_name || ''}</td>
+                    <td class="px-4 py-2 border-b">${transaction.driver_name || ''}</td>
+                    <td class="px-4 py-2 border-b">${transaction.item || ''}</td>
+                    <td class="px-4 py-2 border-b">${transaction.order_list || ''}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.income || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.gp_fee_excl_vat || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.shipping_discount_fee_excl_vat || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.vat_amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.raw_material_cost || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.expense || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right ${profit >= 0 ? 'text-teal-600' : 'text-rose-600'}">${profit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b">${transaction.note || ''}</td>
+                    <td class="px-4 py-2 border-b text-center space-x-2 whitespace-nowrap">
+                        <button onclick="window.showEditModal('${transaction.id}', '${transaction.note || ''}', '${transaction.buyer_name || ''}', '${transaction.order_id || ''}', '${transaction.order_number || ''}', '${transaction.driver_name || ''}', ${transaction.income || 0}, ${transaction.gp_fee_excl_vat || 0}, ${transaction.shipping_discount_fee_excl_vat || 0}, ${transaction.expense || 0}, '${transaction.order_list || ''}', ${transaction.vat_amount || 0}, ${transaction.raw_material_cost || 0})" class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
+                        <button onclick="window.showDeleteModal('${transaction.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            totalIncomeEl.textContent = totalIncome.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            totalExpenseEl.textContent = totalExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            totalProfitEl.textContent = (totalIncome - totalExpense).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            totalProfitEl.classList.remove('text-teal-600', 'text-rose-600');
+            totalProfitEl.classList.add((totalIncome - totalExpense) >= 0 ? 'text-teal-600' : 'text-rose-600');
         }
 
         // Modal Logic
@@ -209,13 +403,73 @@
         const modalConfirm = document.getElementById('modal-confirm');
         const modalCancel = document.getElementById('modal-cancel');
 
-        window.showModal = (title, message, confirmAction = null) => {
-            modalTitle.textContent = title;
-            modalBody.innerHTML = `<p>${message}</p>`;
+        window.showEditModal = (id, note, buyer_name, order_id, order_number, driver_name, income, gp_fee_excl_vat, shipping_discount_fee_excl_vat, expense, order_list, vat_amount, raw_material_cost) => {
+            modalTitle.textContent = 'แก้ไขรายการ';
+            modalBody.innerHTML = `
+                <div class="space-y-4 text-left">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อผู้ซื้อ</label>
+                        <input type="text" id="modal-buyer-name" value="${buyer_name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">รหัสใบสั่งซื้อ</label>
+                        <input type="text" id="modal-order-id" value="${order_id}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">เลขออเดอร์</label>
+                        <input type="text" id="modal-order-number" value="${order_number}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">คนขับ</label>
+                        <input type="text" id="modal-driver-name" value="${driver_name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">รายการสั่งซื้อ</label>
+                        <textarea id="modal-order-list" class="w-full px-3 py-2 border border-gray-300 rounded-md">${order_list}</textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">รายรับ</label>
+                        <input type="number" id="modal-income" value="${income}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าใช้จ่าย GP (ไม่รวม VAT)</label>
+                        <input type="number" id="modal-gp-fee-excl-vat" value="${gp_fee_excl_vat}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าส่วนลดค่าส่ง (ไม่รวม VAT)</label>
+                        <input type="number" id="modal-shipping-discount-fee-excl-vat" value="${shipping_discount_fee_excl_vat}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่า VAT</label>
+                        <input type="number" id="modal-vat-amount" value="${vat_amount}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าวัตถุดิบ</label>
+                        <input type="number" id="modal-raw-material-cost" value="${raw_material_cost}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าใช้จ่ายอื่นๆ</label>
+                        <input type="number" id="modal-expense" value="${expense}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">หมายเหตุ</label>
+                        <input type="text" id="modal-note" value="${note}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                </div>
+            `;
             modalConfirm.onclick = () => {
-                if (confirmAction) {
-                    confirmAction();
-                }
+                const newIncome = parseFloat(document.getElementById('modal-income').value);
+                const newGpFeeExclVat = parseFloat(document.getElementById('modal-gp-fee-excl-vat').value);
+                const newShippingDiscountFeeExclVat = parseFloat(document.getElementById('modal-shipping-discount-fee-excl-vat').value);
+                const newVatAmount = parseFloat(document.getElementById('modal-vat-amount').value);
+                const newRawMaterialCost = parseFloat(document.getElementById('modal-raw-material-cost').value);
+                const newExpense = parseFloat(document.getElementById('modal-expense').value);
+                const newNote = document.getElementById('modal-note').value;
+                const newBuyerName = document.getElementById('modal-buyer-name').value;
+                const newOrderNumber = document.getElementById('modal-order-number').value;
+                const newDriverName = document.getElementById('modal-driver-name').value;
+                const newOrderList = document.getElementById('modal-order-list').value;
+                editTransaction(id, newIncome, newGpFeeExclVat, newShippingDiscountFeeExclVat, newVatAmount, newRawMaterialCost, newExpense, newNote, newBuyerName, newOrderNumber, newDriverName, newOrderList);
                 modal.style.display = 'none';
             };
             modalCancel.onclick = () => {
@@ -224,6 +478,54 @@
             modal.style.display = 'flex';
         };
 
+        window.showDeleteModal = (id) => {
+            modalTitle.textContent = 'ยืนยันการลบ';
+            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบรายการนี้?</p>`;
+            modalConfirm.onclick = () => {
+                deleteTransaction(id);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => {
+                modal.style.display = 'none';
+            };
+            modal.style.display = 'flex';
+        };
+
+        async function editTransaction(id, newIncome, newGpFeeExclVat, newShippingDiscountFeeExclVat, newVatAmount, newRawMaterialCost, newExpense, newNote, newBuyerName, newOrderNumber, newDriverName, newOrderList) {
+            if (!db || !userId) return;
+            try {
+                const transactionRef = doc(db, `artifacts/${appId}/public/data/transactions`, id);
+                await updateDoc(transactionRef, { 
+                    income: newIncome, 
+                    gp_fee_excl_vat: newGpFeeExclVat, 
+                    shipping_discount_fee_excl_vat: newShippingDiscountFeeExclVat, 
+                    vat_amount: newVatAmount,
+                    raw_material_cost: newRawMaterialCost,
+                    expense: newExpense, 
+                    note: newNote,
+                    buyer_name: newBuyerName,
+                    order_number: newOrderNumber,
+                    driver_name: newDriverName,
+                    order_list: newOrderList
+                });
+                console.log("Transaction updated successfully.");
+            } catch (error) {
+                console.error("Error updating document:", error);
+            }
+        }
+
+        async function deleteTransaction(id) {
+            if (!db || !userId) return;
+            try {
+                const transactionRef = doc(db, `artifacts/${appId}/public/data/transactions`, id);
+                await deleteDoc(transactionRef);
+                console.log("Transaction deleted successfully.");
+            } catch (error) {
+                console.error("Error deleting document:", error);
+            }
+        }
+
+        // Close modal when clicking outside
         window.onclick = function(event) {
             if (event.target == modal) {
                 modal.style.display = 'none';
@@ -278,7 +580,32 @@
             </section>
             
             <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">ฟอร์มบันทึกและแก้ไขข้อมูล</h2>
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">สรุปยอดรายเดือน</h2>
+                <div class="flex flex-col sm:flex-row gap-4 mb-4">
+                    <select id="summary-month" class="w-full sm:w-1/2 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400"></select>
+                    <select id="summary-year" class="w-full sm:w-1/2 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400"></select>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                    <div class="bg-sky-200 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg text-gray-600">รายรับรายเดือน</p>
+                        <p class="text-3xl font-extrabold text-sky-800 mt-1">฿<span id="monthly-income">0.00</span></p>
+                    </div>
+                    <div class="bg-rose-200 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg text-gray-600">รายจ่ายรายเดือน</p>
+                        <p class="text-3xl font-extrabold text-rose-800 mt-1">฿<span id="monthly-expense">0.00</span></p>
+                    </div>
+                    <div class="bg-emerald-200 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg text-gray-600">กำไรรายเดือน</p>
+                        <p class="text-3xl font-extrabold text-emerald-800 mt-1">฿<span id="monthly-profit">0.00</span></p>
+                    </div>
+                </div>
+                <div class="mt-8">
+                    <canvas id="myChart"></canvas>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">เพิ่มรายการใหม่</h2>
                 <div class="bg-yellow-100 p-3 rounded-lg text-yellow-800 text-sm mb-4">
                     💡 User ID: <span id="user-id" class="font-mono break-all"></span>
                 </div>
@@ -365,6 +692,38 @@
                         </button>
                     </div>
                 </form>
+            </section>
+
+            <section class="bg-white p-6 rounded-lg shadow-xl border border-gray-200 overflow-x-auto">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">ประวัติการทำธุรกรรม</h2>
+                <div class="bg-yellow-100 p-3 rounded-lg text-yellow-800 text-sm mb-4">
+                    💡 User ID: <span id="user-id" class="font-mono break-all"></span>
+                </div>
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">วัน/เวลา</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ช่องทาง</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">เลขออเดอร์</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ชื่อผู้ซื้อ</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">คนขับ</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">รายการ</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">รายการสั่งซื้อ</th>
+                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">รายรับ (บาท)</th>
+                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่า GP (ไม่รวม VAT)</th>
+                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าส่วนลด (ไม่รวม VAT)</th>
+                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่า VAT</th>
+                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าวัตถุดิบ (บาท)</th>
+                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าใช้จ่ายอื่นๆ (บาท)</th>
+                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">กำไร (บาท)</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">หมายเหตุ</th>
+                            <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transaction-table-body" class="bg-white divide-y divide-gray-200">
+                        <!-- Transaction rows will be injected here by JavaScript -->
+                    </tbody>
+                </table>
             </section>
         </main>
 
