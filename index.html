@@ -258,7 +258,7 @@
         }
         
         async function checkLowStock(items) {
-            if (DISCORD_WEBHOOK_URL === "https://discordapp.com/api/webhooks/1417403074116325386/2RJodjx-QvvAv3wNtg00aLxkHnknk3tM421GpX4_cenQcy3NMHYyhSG5dU6u0wTsoBjR") {
+            if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL === "https://discordapp.com/api/webhooks/1417403074116325386/2RJodjx-QvvAv3wNtg00aLxkHnknk3tM421GpX4_cenQcy3NMHYyhSG5dU6u0wTsoBjR") {
                 console.warn("Discord Webhook URL not set. Skipping low stock notifications.");
                 return;
             }
@@ -1007,4 +1007,3 @@
 </body>
 
 </html>
-
