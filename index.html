@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>บัญชีเดลิเวอรี่ รายรับ-รายจ่าย ร้านโครตจะแมน</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         .modal {
             display: none;
@@ -36,7 +38,7 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, setDoc, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -51,13 +53,13 @@
             measurementId: "G-FM7S14RX3R"
         };
         const appId = "my-delivery-app-89237"; // Using the project ID as a unique app ID
-        const initialAuthToken = null; // No custom token needed when running locally
-
+        
         // Initialize Firebase
         let app = null;
         let auth = null;
         let db = null;
         let userId = null;
+        let myChart = null;
 
         document.addEventListener('DOMContentLoaded', async () => {
             if (Object.keys(firebaseConfig).length > 0) {
@@ -67,33 +69,50 @@
                 setLogLevel('Debug');
                 console.log("Firebase initialized.");
 
-                // Sign in with custom token or anonymously
-                if (initialAuthToken) {
-                    try {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                    } catch (error) {
-                        console.error("Error signing in with custom token:", error);
-                        await signInAnonymously(auth);
-                    }
-                } else {
-                    await signInAnonymously(auth);
-                }
-
                 onAuthStateChanged(auth, (user) => {
+                    const loadingState = document.getElementById('loading-state');
+                    const mainContent = document.getElementById('main-content');
+                    const loginContent = document.getElementById('login-content');
+                    const logoutBtn = document.getElementById('logout-btn');
+                    const userIdDisplay = document.getElementById('user-id');
+
                     if (user) {
                         userId = user.uid;
-                        document.getElementById('user-id').textContent = userId;
+                        userIdDisplay.textContent = userId;
                         console.log("User authenticated:", userId);
-                        document.getElementById('loading-state').classList.add('hidden');
-                        document.getElementById('main-content').classList.remove('hidden');
+                        loadingState.classList.add('hidden');
+                        loginContent.classList.add('hidden');
+                        mainContent.classList.remove('hidden');
+                        logoutBtn.classList.remove('hidden');
                         setupDataListeners();
                         populateMonthYearSelects();
                     } else {
                         console.log("No user signed in.");
-                        document.getElementById('loading-state').classList.remove('hidden');
-                        document.getElementById('main-content').classList.add('hidden');
+                        loadingState.classList.add('hidden');
+                        loginContent.classList.remove('hidden');
+                        mainContent.classList.add('hidden');
+                        logoutBtn.classList.add('hidden');
                     }
                 });
+
+                // Login with Google
+                document.getElementById('login-btn').addEventListener('click', async () => {
+                    const provider = new GoogleAuthProvider();
+                    try {
+                        await signInWithPopup(auth, provider);
+                    } catch (error) {
+                        console.error("Error signing in with Google:", error);
+                    }
+                });
+                
+                document.getElementById('logout-btn').addEventListener('click', async () => {
+                    try {
+                        await signOut(auth);
+                    } catch (error) {
+                        console.error("Error signing out:", error);
+                    }
+                });
+
             } else {
                 console.error("Firebase config is missing. The app cannot function without it.");
                 document.getElementById('loading-state').innerHTML = `<p class="text-red-500 font-bold">Error: Firebase configuration is missing.</p>`;
@@ -169,6 +188,7 @@
 
                 displayTransactions(transactions);
                 updateMonthlySummary(transactions);
+                updateChart(transactions);
             }, (error) => {
                 console.error("Error listening to transactions:", error);
             });
@@ -181,6 +201,9 @@
             const yearSelect = document.getElementById('summary-year');
             const currentYear = new Date().getFullYear();
             const currentMonth = new Date().getMonth();
+
+            monthSelect.innerHTML = '';
+            yearSelect.innerHTML = '';
 
             for (let i = 0; i < months.length; i++) {
                 const option = document.createElement('option');
@@ -230,6 +253,94 @@
             document.getElementById('monthly-profit').textContent = monthlyProfit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             document.getElementById('monthly-profit').classList.remove('text-emerald-600', 'text-rose-600');
             document.getElementById('monthly-profit').classList.add(monthlyProfit >= 0 ? 'text-emerald-600' : 'text-rose-600');
+        }
+
+        // Update the chart
+        function updateChart(transactions = []) {
+            const monthlyData = transactions.reduce((acc, transaction) => {
+                const transactionDate = new Date(transaction.date);
+                const month = transactionDate.getMonth() + 1;
+                const year = transactionDate.getFullYear();
+                const key = `${year}-${month}`;
+
+                if (!acc[key]) {
+                    acc[key] = { income: 0, expense: 0, date: transactionDate };
+                }
+
+                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
+                acc[key].income += (transaction.income || 0);
+                acc[key].expense += totalTransactionExpense;
+
+                return acc;
+            }, {});
+
+            const sortedKeys = Object.keys(monthlyData).sort();
+            const labels = sortedKeys.map(key => {
+                const [year, month] = key.split('-');
+                return `เดือน ${month}/${year}`;
+            });
+            const incomeData = sortedKeys.map(key => monthlyData[key].income);
+            const expenseData = sortedKeys.map(key => monthlyData[key].expense);
+
+            const chartData = {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'รายรับ',
+                        data: incomeData,
+                        borderColor: 'rgb(16, 185, 129)', // Tailwind's green-500
+                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                        tension: 0.1,
+                        fill: true
+                    },
+                    {
+                        label: 'รายจ่าย',
+                        data: expenseData,
+                        borderColor: 'rgb(244, 63, 94)', // Tailwind's rose-500
+                        backgroundColor: 'rgba(244, 63, 94, 0.2)',
+                        tension: 0.1,
+                        fill: true
+                    }
+                ]
+            };
+
+            if (myChart) {
+                myChart.data = chartData;
+                myChart.update();
+            } else {
+                const ctx = document.getElementById('myChart').getContext('2d');
+                myChart = new Chart(ctx, {
+                    type: 'line',
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        label += context.parsed.y.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' บาท';
+                                        return label;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value, index, ticks) {
+                                        return value.toLocaleString('th-TH') + ' บาท';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
         }
 
         // Display transactions in the table and update summary
@@ -433,12 +544,26 @@
             <p class="text-lg text-gray-600 mt-2">สำหรับร้านโครตจะแมน</p>
         </header>
 
-        <div id="loading-state" class="text-center py-10">
+        <div id="loading-state" class="flex flex-col items-center justify-center min-h-[50vh]">
             <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-gray-900 mx-auto"></div>
             <p class="mt-4 text-gray-600">กำลังเชื่อมต่อฐานข้อมูล...</p>
         </div>
+        
+        <div id="login-content" class="flex flex-col items-center justify-center min-h-[50vh] hidden">
+            <div class="bg-white p-8 rounded-lg shadow-xl text-center">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">ยินดีต้อนรับ</h2>
+                <p class="text-gray-600 mb-6">เข้าสู่ระบบด้วยบัญชี Google เพื่อเริ่มบันทึกข้อมูล</p>
+                <button id="login-btn" class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-md shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    เข้าสู่ระบบด้วย Google
+                </button>
+            </div>
+        </div>
 
         <main id="main-content" class="hidden">
+            <div class="flex justify-end mb-4">
+                <button id="logout-btn" class="px-4 py-2 bg-gray-500 text-white font-semibold rounded-md shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400">ออกจากระบบ</button>
+            </div>
+
             <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">สรุปยอดทั้งหมด</h2>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
@@ -476,6 +601,9 @@
                         <p class="text-lg text-gray-600">กำไรรายเดือน</p>
                         <p class="text-3xl font-extrabold text-emerald-800 mt-1">฿<span id="monthly-profit">0.00</span></p>
                     </div>
+                </div>
+                <div class="mt-8">
+                    <canvas id="myChart"></canvas>
                 </div>
             </section>
 
