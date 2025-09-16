@@ -207,6 +207,13 @@
                     await updateDoc(doc.ref, { current_stock: newStock });
                 }
             });
+            // Re-check low stock after every sale
+            const inventorySnapshot = await getDocs(inventoryColRef);
+            const updatedItems = [];
+            inventorySnapshot.forEach(doc => {
+                updatedItems.push({ id: doc.id, ...doc.data() });
+            });
+            checkLowStock(updatedItems);
         }
         
         // Listen for real-time inventory updates
