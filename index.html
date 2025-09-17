@@ -430,8 +430,8 @@
                     escapeCSV(transaction.recordedByUserId || '')
                 ].join(',');
             });
-
-            const csvString = [header, ...csvRows].join('\n');
+            const BOM = "\uFEFF"; // Byte Order Mark
+            const csvString = [BOM + header, ...csvRows].join('\n');
             const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
