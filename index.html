@@ -34,6 +34,24 @@
             width: 90%;
             text-align: center;
         }
+
+        .toast-notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #10B981;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            transition: opacity 0.3s ease-in-out;
+            opacity: 0;
+        }
+
+        .toast-notification.show {
+            opacity: 1;
+        }
     </style>
     <!-- Firebase SDK -->
     <script type="module">
@@ -136,6 +154,15 @@
                 document.getElementById('loading-state').classList.remove('hidden');
             }
         });
+
+        function showToastNotification(message) {
+            const toast = document.getElementById('toast-notification');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
         
         // A single function to send messages to Discord
         async function sendDiscordMessage(message, embed = null) {
@@ -204,6 +231,7 @@
                 await addDoc(transactionsColRef, data);
                 e.target.reset(); // Clear form after successful submission
                 console.log("Transaction added successfully.");
+                showToastNotification("✅ บันทึกรายการสำเร็จ");
                 updateInventoryOnSale(data);
                 
                 const transactionMessage = `✅ **รายการใหม่ถูกบันทึก:** รายรับ ${data.income.toLocaleString()} บาท จาก ${data.channel}. โดย ${userEmail}`;
@@ -235,6 +263,7 @@
                 await setDoc(inventoryDocRef, data);
                 e.target.reset();
                 console.log("Inventory item added/updated successfully.");
+                showToastNotification("✅ อัปเดตสต็อกสำเร็จ");
                 const inventoryMessage = `📦 **ข้อมูลสต็อกอัปเดต:** ${data.name} มีสต็อกใหม่ ${data.current_stock} ${data.unit}. โดย ${userEmail}`;
                 sendDiscordMessage(inventoryMessage);
             } catch (error) {
@@ -280,17 +309,12 @@
             });
 
             // Re-check low stock after every sale
-            const lowStockItems = allRecipes
-                .flatMap(recipe => recipe.raw_materials)
-                .filter(material => {
-                    const inventoryItem = allRecipes.find(item => item.name === material.name);
-                    return inventoryItem && inventoryItem.current_stock <= inventoryItem.low_threshold;
-                });
-            
-            if (lowStockItems.length > 0) {
-                const messages = lowStockItems.map(item => `⚠️ **${item.name}** สต็อกใกล้หมดแล้ว! มีเพียง ${item.current_stock} ${item.unit} (ต่ำกว่าเกณฑ์ ${item.low_threshold} ${item.unit})`);
-                sendDiscordMessage(messages.join('\n'));
-            }
+            const inventorySnapshot = await getDocs(inventoryColRef);
+            const updatedItems = [];
+            inventorySnapshot.forEach(doc => {
+                updatedItems.push({ id: doc.id, ...doc.data() });
+            });
+            checkLowStock(updatedItems);
         }
         
         // Listen for real-time inventory updates
@@ -313,9 +337,15 @@
         // Check for low stock and send notification
         function checkLowStock(inventoryItems) {
             const lowStockItems = inventoryItems.filter(item => item.current_stock <= item.low_threshold);
+            const lowStockAlert = document.getElementById('low-stock-alert');
+            
             if (lowStockItems.length > 0) {
                 const messages = lowStockItems.map(item => `⚠️ **${item.name}** สต็อกใกล้หมดแล้ว! มีเพียง ${item.current_stock} ${item.unit} (ต่ำกว่าเกณฑ์ ${item.low_threshold} ${item.unit})`);
+                lowStockAlert.innerHTML = messages.join('<br>');
+                lowStockAlert.classList.remove('hidden');
                 sendDiscordMessage(messages.join('\n'));
+            } else {
+                lowStockAlert.classList.add('hidden');
             }
         }
 
@@ -806,6 +836,7 @@
                     recordedByUserEmail: userEmail // Add the user email
                 });
                 console.log("Transaction updated successfully.");
+                showToastNotification("✅ แก้ไขรายการสำเร็จ");
                 const transactionMessage = `✏️ **รายการถูกแก้ไข:** รายการ ${newOrderNumber} ถูกแก้ไขโดยผู้ใช้. โดย ${userEmail}`;
                 sendDiscordMessage(transactionMessage);
             } catch (error) {
@@ -819,6 +850,7 @@
                 const transactionRef = doc(db, `artifacts/${appId}/public/data/transactions`, id);
                 await deleteDoc(transactionRef);
                 console.log("Transaction deleted successfully.");
+                showToastNotification("🗑️ ลบรายการสำเร็จ");
                 const transactionMessage = `🗑️ **รายการถูกลบ:** รายการ ${id} ถูกลบออกจากระบบ. โดย ${userEmail}`;
                 sendDiscordMessage(transactionMessage);
             } catch (error) {
@@ -882,6 +914,7 @@
                 const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, id);
                 await updateDoc(inventoryRef, { name, unit, current_stock, low_threshold });
                 console.log("Inventory item updated successfully.");
+                showToastNotification("✅ แก้ไขสต็อกสำเร็จ");
                 const inventoryMessage = `✏️ **รายการสต็อกถูกแก้ไข:** ${name} มีสต็อกใหม่ ${current_stock} ${unit}. โดย ${userEmail}`;
                 sendDiscordMessage(inventoryMessage);
             } catch (error) {
@@ -895,6 +928,7 @@
                 const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, id);
                 await deleteDoc(inventoryRef);
                 console.log("Inventory item deleted successfully.");
+                showToastNotification("🗑️ ลบสต็อกสำเร็จ");
                 const deleteMessage = `🗑️ **รายการสต็อกถูกลบ:** รายการ ${id} ถูกลบออกจากระบบ. โดย ${userEmail}`;
                 sendDiscordMessage(deleteMessage);
             } catch (error) {
@@ -974,6 +1008,7 @@
                 rawMaterialCount = 0;
                 window.addRawMaterialField();
                 console.log("Recipe saved successfully.");
+                showToastNotification("✅ บันทึกสูตรสำเร็จ");
                 const recipeMessage = `📝 **สูตรใหม่ถูกบันทึก/แก้ไข:** สูตรสำหรับ ${finishedProduct} ถูกอัปเดตโดย ${userEmail}.`;
                 sendDiscordMessage(recipeMessage);
             } catch (error) {
@@ -1106,6 +1141,7 @@
                 const recipeRef = doc(db, `artifacts/${appId}/public/data/recipes`, id);
                 await updateDoc(recipeRef, { raw_materials: newRawMaterials, recordedByUserEmail: userEmail });
                 console.log("Recipe updated successfully.");
+                showToastNotification("✅ แก้ไขสูตรสำเร็จ");
                 const recipeMessage = `✏️ **สูตรถูกแก้ไข:** สูตรสำหรับ ${id} ถูกอัปเดตโดย ${userEmail}.`;
                 sendDiscordMessage(recipeMessage);
             } catch (error) {
@@ -1119,6 +1155,7 @@
                 const recipeRef = doc(db, `artifacts/${appId}/public/data/recipes`, id);
                 await deleteDoc(recipeRef);
                 console.log("Recipe deleted successfully.");
+                showToastNotification("🗑️ ลบสูตรสำเร็จ");
                 const deleteMessage = `🗑️ **สูตรถูกลบ:** สูตรสำหรับ ${id} ถูกลบออกจากระบบ. โดย ${userEmail}`;
                 sendDiscordMessage(deleteMessage);
             } catch (error) {
@@ -1134,6 +1171,9 @@
             <h1 class="text-4xl font-extrabold text-gray-800">บัญชีเดลิเวอรี่ รายรับ-รายจ่าย</h1>
             <p class="text-lg text-gray-600 mt-2">สำหรับร้านโครตจะแมนฮาลาล เดลิเวอรี่</p>
         </header>
+
+        <div id="low-stock-alert" class="hidden fixed top-0 left-0 right-0 bg-red-500 text-white p-4 text-center z-50">
+        </div>
 
         <div id="loading-state" class="flex flex-col items-center justify-center min-h-[50vh]">
             <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-gray-900 mx-auto"></div>
@@ -1469,6 +1509,7 @@
                 </div>
             </div>
         </div>
+        <div id="toast-notification" class="toast-notification"></div>
 
     </div>
     <footer class="text-center p-4 text-gray-600 text-sm mt-8 border-t border-gray-300">
