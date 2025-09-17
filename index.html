@@ -62,9 +62,10 @@
         let myChart = null;
         let allTransactions = []; // Store all transactions here
         let filteredTransactions = []; // Store filtered transactions for display and export
+        let allRecipes = [];
 
         // Discord Webhook URL (replace with your own)
-        const DISCORD_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1417426298954846289/6DOwlCNNYkcZsJILbFhKqAvX21tp_ZulqyJji6ErC5kR24CNWdv4X-_1ktGbMI5V4ZEp";
+        const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1234567890/abcdefghijklmnopqrstuvwxyz";
 
         document.addEventListener('DOMContentLoaded', async () => {
             if (Object.keys(firebaseConfig).length > 0) {
@@ -91,6 +92,7 @@
                         logoutBtn.classList.remove('hidden');
                         setupDataListeners();
                         setupInventoryListeners();
+                        setupRecipeListeners();
                         populateMonthYearSelects();
                     } else {
                         console.log("No user signed in.");
@@ -242,32 +244,49 @@
 
         // Update inventory after a sale (Deduct raw materials)
         async function updateInventoryOnSale(transactionData) {
-            if (!db || !userEmail) return;
-            // This is a simplified example. In a real-world app, you'd have a recipe
-            // that links finished goods to raw materials. For this demo, we'll
-            // just look for specific keywords in the order list.
+            if (!db || !userEmail || allRecipes.length === 0) {
+                console.log("Recipes not loaded or user not authenticated. Skipping inventory deduction.");
+                return;
+            }
             
             const orderList = transactionData.order_list.toLowerCase();
             const inventoryColRef = collection(db, `artifacts/${appId}/public/data/inventory`);
-
-            const snapshot = await getDocs(inventoryColRef);
-            snapshot.forEach(async (doc) => {
-                const item = doc.data();
-                if (orderList.includes(item.name.toLowerCase())) {
-                    const quantityUsed = 1; // Simplified: Assume 1 unit per order
-                    const newStock = (item.current_stock || 0) - quantityUsed;
-                    await updateDoc(doc.ref, { current_stock: newStock });
-                }
-            });
             
-            const inventorySnapshot = await getDocs(inventoryColRef);
-            const updatedItems = [];
-            inventorySnapshot.forEach(doc => {
-                updatedItems.push({ id: doc.id, ...doc.data() });
+            allRecipes.forEach(async (recipe) => {
+                // Check if the finished product is in the order list
+                if (orderList.includes(recipe.finished_product.toLowerCase())) {
+                    console.log(`Matching recipe found for: ${recipe.finished_product}`);
+                    const inventorySnapshot = await getDocs(inventoryColRef);
+                    const inventoryItems = {};
+                    inventorySnapshot.forEach(doc => {
+                        inventoryItems[doc.data().name.toLowerCase()] = { id: doc.id, ...doc.data() };
+                    });
+
+                    // Deduct each raw material from the recipe
+                    recipe.raw_materials.forEach(async (rawMaterial) => {
+                        const materialNameLower = rawMaterial.name.toLowerCase();
+                        if (inventoryItems[materialNameLower]) {
+                            const currentStock = inventoryItems[materialNameLower].current_stock || 0;
+                            const newStock = currentStock - (rawMaterial.quantity || 0);
+                            
+                            const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, inventoryItems[materialNameLower].id);
+                            await updateDoc(inventoryRef, { current_stock: newStock });
+                            console.log(`Deducted ${rawMaterial.quantity} ${rawMaterial.unit} of ${rawMaterial.name}. New stock: ${newStock}`);
+                        } else {
+                            console.warn(`Raw material "${rawMaterial.name}" not found in inventory.`);
+                        }
+                    });
+                }
             });
 
             // Re-check low stock after every sale
-            const lowStockItems = updatedItems.filter(item => item.current_stock <= item.low_threshold);
+            const lowStockItems = allRecipes
+                .flatMap(recipe => recipe.raw_materials)
+                .filter(material => {
+                    const inventoryItem = allRecipes.find(item => item.name === material.name);
+                    return inventoryItem && inventoryItem.current_stock <= inventoryItem.low_threshold;
+                });
+            
             if (lowStockItems.length > 0) {
                 const messages = lowStockItems.map(item => `⚠️ **${item.name}** สต็อกใกล้หมดแล้ว! มีเพียง ${item.current_stock} ${item.unit} (ต่ำกว่าเกณฑ์ ${item.low_threshold} ${item.unit})`);
                 sendDiscordMessage(messages.join('\n'));
@@ -287,8 +306,17 @@
                     inventoryItems.push({ id: doc.id, ...doc.data() });
                 });
                 displayInventory(inventoryItems);
-                // The low stock check is now moved inside updateInventoryOnSale
+                checkLowStock(inventoryItems); // Check low stock when inventory changes
             });
+        }
+        
+        // Check for low stock and send notification
+        function checkLowStock(inventoryItems) {
+            const lowStockItems = inventoryItems.filter(item => item.current_stock <= item.low_threshold);
+            if (lowStockItems.length > 0) {
+                const messages = lowStockItems.map(item => `⚠️ **${item.name}** สต็อกใกล้หมดแล้ว! มีเพียง ${item.current_stock} ${item.unit} (ต่ำกว่าเกณฑ์ ${item.low_threshold} ${item.unit})`);
+                sendDiscordMessage(messages.join('\n'));
+            }
         }
 
         function displayInventory(items) {
@@ -880,6 +908,223 @@
                 modal.style.display = 'none';
             }
         };
+
+        // --- NEW RECIPE MANAGEMENT FUNCTIONS ---
+        let rawMaterialCount = 1;
+
+        window.addRawMaterialField = () => {
+            rawMaterialCount++;
+            const container = document.getElementById('raw-materials-container');
+            const newField = document.createElement('div');
+            newField.classList.add('flex', 'space-x-2', 'items-end');
+            newField.innerHTML = `
+                <div class="flex-1">
+                    <label for="raw-material-name-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
+                    <input type="text" id="raw-material-name-${rawMaterialCount}" name="raw_material_name" placeholder="เช่น ไข่ไก่" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                </div>
+                <div class="flex-1">
+                    <label for="raw-material-quantity-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
+                    <input type="number" id="raw-material-quantity-${rawMaterialCount}" name="raw_material_quantity" value="1" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                </div>
+                <div class="flex-1">
+                    <label for="raw-material-unit-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
+                    <input type="text" id="raw-material-unit-${rawMaterialCount}" name="raw_material_unit" placeholder="เช่น ฟอง, กรัม" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                </div>
+                <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
+            `;
+            container.appendChild(newField);
+        };
+
+        document.getElementById('add-raw-material-btn').addEventListener('click', () => {
+            window.addRawMaterialField();
+        });
+
+        document.getElementById('recipe-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!db || !userEmail) {
+                console.error("Firebase is not initialized or user is not authenticated.");
+                return;
+            }
+
+            const finishedProduct = document.getElementById('finished-product-name').value;
+            const rawMaterials = [];
+            const rawMaterialNames = document.querySelectorAll('input[name="raw_material_name"]');
+            const rawMaterialQuantities = document.querySelectorAll('input[name="raw_material_quantity"]');
+            const rawMaterialUnits = document.querySelectorAll('input[name="raw_material_unit"]');
+
+            rawMaterialNames.forEach((nameInput, index) => {
+                rawMaterials.push({
+                    name: nameInput.value,
+                    quantity: parseFloat(rawMaterialQuantities[index].value) || 0,
+                    unit: rawMaterialUnits[index].value
+                });
+            });
+
+            const data = {
+                finished_product: finishedProduct,
+                raw_materials: rawMaterials,
+                recordedByUserEmail: userEmail
+            };
+            
+            try {
+                const recipesColRef = collection(db, `artifacts/${appId}/public/data/recipes`);
+                await setDoc(doc(recipesColRef, finishedProduct), data);
+                e.target.reset();
+                document.getElementById('raw-materials-container').innerHTML = '';
+                rawMaterialCount = 0;
+                window.addRawMaterialField();
+                console.log("Recipe saved successfully.");
+                const recipeMessage = `📝 **สูตรใหม่ถูกบันทึก/แก้ไข:** สูตรสำหรับ ${finishedProduct} ถูกอัปเดตโดย ${userEmail}.`;
+                sendDiscordMessage(recipeMessage);
+            } catch (error) {
+                console.error("Error saving recipe:", error);
+            }
+        });
+
+        function setupRecipeListeners() {
+            if (!db || !userEmail) return;
+            const recipesColRef = collection(db, `artifacts/${appId}/public/data/recipes`);
+            onSnapshot(recipesColRef, (querySnapshot) => {
+                allRecipes = [];
+                querySnapshot.forEach((doc) => {
+                    allRecipes.push({ id: doc.id, ...doc.data() });
+                });
+                displayRecipes(allRecipes);
+            });
+        }
+
+        function displayRecipes(recipes) {
+            const tableBody = document.getElementById('recipe-table-body');
+            tableBody.innerHTML = '';
+            if (recipes.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-gray-500">ยังไม่มีสูตรวัตถุดิบ</td></tr>`;
+            }
+            recipes.forEach(recipe => {
+                const row = document.createElement('tr');
+                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
+                const rawMaterialsList = recipe.raw_materials.map(mat => `${mat.name} (${mat.quantity} ${mat.unit})`).join(', ');
+                row.innerHTML = `
+                    <td class="px-4 py-2 border-b font-semibold">${recipe.finished_product}</td>
+                    <td class="px-4 py-2 border-b text-sm">${rawMaterialsList}</td>
+                    <td class="px-4 py-2 border-b text-center space-x-2 whitespace-nowrap">
+                        <button onclick='window.showEditRecipeModal(${JSON.stringify(recipe)})' class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
+                        <button onclick="window.showDeleteRecipeModal('${recipe.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+        
+        window.showEditRecipeModal = (recipeData) => {
+            modalTitle.textContent = 'แก้ไขสูตรวัตถุดิบ';
+            let rawMaterialHtml = recipeData.raw_materials.map((mat, index) => `
+                <div class="flex space-x-2 items-end">
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
+                        <input type="text" id="modal-raw-material-name-${index}" value="${mat.name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
+                        <input type="number" id="modal-raw-material-quantity-${index}" value="${mat.quantity}" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
+                        <input type="text" id="modal-raw-material-unit-${index}" value="${mat.unit}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
+                </div>
+            `).join('');
+
+            modalBody.innerHTML = `
+                <div class="space-y-4 text-left">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อเมนู</label>
+                        <input type="text" id="modal-finished-product-name" value="${recipeData.finished_product}" class="w-full px-3 py-2 border border-gray-300 rounded-md" disabled>
+                    </div>
+                    <div id="modal-raw-materials-container" class="space-y-2">${rawMaterialHtml}</div>
+                    <button type="button" id="modal-add-raw-material-btn" class="mt-2 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">เพิ่มวัตถุดิบ</button>
+                </div>
+            `;
+
+            document.getElementById('modal-add-raw-material-btn').addEventListener('click', () => {
+                const container = document.getElementById('modal-raw-materials-container');
+                const newField = document.createElement('div');
+                newField.classList.add('flex', 'space-x-2', 'items-end');
+                newField.innerHTML = `
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
+                        <input type="text" name="modal-raw-material-name" placeholder="เช่น ไข่ไก่" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
+                        <input type="number" name="modal-raw-material-quantity" value="1" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
+                        <input type="text" name="modal-raw-material-unit" placeholder="เช่น ฟอง, กรัม" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
+                `;
+                container.appendChild(newField);
+            });
+
+            modalConfirm.onclick = () => {
+                const newRawMaterials = [];
+                const names = document.querySelectorAll('#modal-raw-materials-container input[name="modal-raw-material-name"]');
+                const quantities = document.querySelectorAll('#modal-raw-materials-container input[name="modal-raw-material-quantity"]');
+                const units = document.querySelectorAll('#modal-raw-materials-container input[name="modal-raw-material-unit"]');
+                
+                names.forEach((nameInput, index) => {
+                    newRawMaterials.push({
+                        name: nameInput.value,
+                        quantity: parseFloat(quantities[index].value) || 0,
+                        unit: units[index].value
+                    });
+                });
+
+                editRecipe(recipeData.id, newRawMaterials);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => { modal.style.display = 'none'; };
+            modal.style.display = 'flex';
+        };
+
+        window.showDeleteRecipeModal = (id) => {
+            modalTitle.textContent = 'ยืนยันการลบสูตร';
+            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบสูตรนี้?</p>`;
+            modalConfirm.onclick = () => {
+                deleteRecipe(id);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => { modal.style.display = 'none'; };
+            modal.style.display = 'flex';
+        };
+
+        async function editRecipe(id, newRawMaterials) {
+            if (!db || !userEmail) return;
+            try {
+                const recipeRef = doc(db, `artifacts/${appId}/public/data/recipes`, id);
+                await updateDoc(recipeRef, { raw_materials: newRawMaterials, recordedByUserEmail: userEmail });
+                console.log("Recipe updated successfully.");
+                const recipeMessage = `✏️ **สูตรถูกแก้ไข:** สูตรสำหรับ ${id} ถูกอัปเดตโดย ${userEmail}.`;
+                sendDiscordMessage(recipeMessage);
+            } catch (error) {
+                console.error("Error updating recipe:", error);
+            }
+        }
+        
+        async function deleteRecipe(id) {
+            if (!db || !userEmail) return;
+            try {
+                const recipeRef = doc(db, `artifacts/${appId}/public/data/recipes`, id);
+                await deleteDoc(recipeRef);
+                console.log("Recipe deleted successfully.");
+                const deleteMessage = `🗑️ **สูตรถูกลบ:** สูตรสำหรับ ${id} ถูกลบออกจากระบบ. โดย ${userEmail}`;
+                sendDiscordMessage(deleteMessage);
+            } catch (error) {
+                console.error("Error deleting recipe:", error);
+            }
+        }
     </script>
 </head>
 
@@ -997,7 +1242,7 @@
                     </div>
                     <div class="md:col-span-3">
                         <label for="order_list" class="block text-sm font-medium text-gray-700 mb-1">รายการสั่งซื้อ</label>
-                        <textarea id="order_list" name="order_list" rows="3" placeholder="เช่น ก๋วยเตี๋ยว 1, ข้าวผัด 2, น้ำเปล่า 1"
+                        <textarea id="order_list" name="order_list" rows="3" placeholder="เช่น ก๋วยเตี๋ยว, ข้าวไข่เจียว"
                             class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400"></textarea>
                     </div>
                     <div>
@@ -1086,6 +1331,56 @@
                         </thead>
                         <tbody id="inventory-table-body" class="bg-white divide-y divide-gray-200">
                             <!-- Inventory rows will be injected here by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">จัดการสูตรวัตถุดิบ</h2>
+                <form id="recipe-form" class="space-y-4">
+                    <div>
+                        <label for="finished-product-name" class="block text-sm font-medium text-gray-700 mb-1">ชื่อเมนู/สินค้าสำเร็จรูป</label>
+                        <input type="text" id="finished-product-name" placeholder="เช่น ก๋วยเตี๋ยว" required class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div id="raw-materials-container" class="space-y-2">
+                        <!-- Raw material inputs will be added here -->
+                        <div class="flex space-x-2 items-end">
+                            <div class="flex-1">
+                                <label for="raw-material-name-0" class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
+                                <input type="text" id="raw-material-name-0" name="raw_material_name" placeholder="เช่น เส้นก๋วยเตี๋ยว" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="flex-1">
+                                <label for="raw-material-quantity-0" class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
+                                <input type="number" id="raw-material-quantity-0" name="raw_material_quantity" value="1" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="flex-1">
+                                <label for="raw-material-unit-0" class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
+                                <input type="text" id="raw-material-unit-0" name="raw_material_unit" placeholder="เช่น กรัม" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
+                        </div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button type="button" id="add-raw-material-btn" class="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
+                            เพิ่มวัตถุดิบ
+                        </button>
+                        <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            บันทึกสูตร
+                        </button>
+                    </div>
+                </form>
+                <div class="overflow-x-auto mt-8">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">เมนู/สินค้า</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">สูตรวัตถุดิบ</th>
+                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recipe-table-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Recipe rows will be injected here by JavaScript -->
                         </tbody>
                     </table>
                 </div>
