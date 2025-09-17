@@ -88,6 +88,7 @@
         let db = null;
         let userEmail = null; // Changed from userId
         let myChart = null;
+        let myExpenseChart = null; // New chart instance for expenses
         let allTransactions = []; // Store all transactions here
         let filteredTransactions = []; // Store filtered transactions for display and export
         let allRecipes = [];
@@ -446,6 +447,7 @@
             displayTransactions(filteredTransactions);
             updateMonthlySummary(filteredTransactions);
             updateChart(filteredTransactions);
+            updateExpenseChart(filteredTransactions);
         }
 
         // Reset all filters
@@ -619,7 +621,7 @@
             document.getElementById('monthly-profit').classList.add(monthlyProfit >= 0 ? 'text-emerald-600' : 'text-rose-600');
         }
 
-        // Update the chart
+        // Update the income chart
         function updateChart(transactions = []) {
             const channelData = transactions.reduce((acc, transaction) => {
                 const channel = transaction.channel || 'ไม่ระบุ';
@@ -652,7 +654,68 @@
             } else {
                 const ctx = document.getElementById('myChart').getContext('2d');
                 myChart = new Chart(ctx, {
-                    type: 'pie', // Changed to 'pie' type
+                    type: 'pie',
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.label || '';
+                                        const value = context.parsed;
+                                        const total = context.dataset.data.reduce((sum, current) => sum + current, 0);
+                                        const percentage = ((value / total) * 100).toFixed(2);
+                                        return `${label}: ${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // New function to update the expense chart
+        function updateExpenseChart(transactions = []) {
+            const expenseData = transactions.reduce((acc, transaction) => {
+                acc['ค่า GP'] = (acc['ค่า GP'] || 0) + (transaction.gp_fee_excl_vat || 0);
+                acc['ค่าส่วนลดค่าส่ง'] = (acc['ค่าส่วนลดค่าส่ง'] || 0) + (transaction.shipping_discount_fee_excl_vat || 0);
+                acc['ค่า VAT'] = (acc['ค่า VAT'] || 0) + (transaction.vat_amount || 0);
+                acc['ค่าวัตถุดิบ'] = (acc['ค่าวัตถุดิบ'] || 0) + (transaction.raw_material_cost || 0);
+                acc['ค่าใช้จ่ายอื่นๆ'] = (acc['ค่าใช้จ่ายอื่นๆ'] || 0) + (transaction.expense || 0);
+                return acc;
+            }, {});
+
+            const labels = Object.keys(expenseData);
+            const data = Object.values(expenseData);
+            const backgroundColors = [
+                'rgb(255, 99, 132)',  // Red
+                'rgb(255, 159, 64)',  // Orange
+                'rgb(255, 205, 86)',  // Yellow
+                'rgb(75, 192, 192)',  // Green
+                'rgb(54, 162, 235)'   // Blue
+            ];
+
+            const chartData = {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: backgroundColors,
+                    hoverOffset: 4
+                }]
+            };
+
+            if (myExpenseChart) {
+                myExpenseChart.data = chartData;
+                myExpenseChart.update();
+            } else {
+                const ctx = document.getElementById('myExpenseChart').getContext('2d');
+                myExpenseChart = new Chart(ctx, {
+                    type: 'pie',
                     data: chartData,
                     options: {
                         responsive: true,
@@ -1263,9 +1326,15 @@
                         <p class="text-4xl font-extrabold text-emerald-600 mt-2">฿<span id="monthly-profit">0.00</span></p>
                     </div>
                 </div>
-                 <div class="mt-8">
-                    <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">กราฟแสดงสัดส่วนรายรับตามช่องทาง</h3>
-                    <canvas id="myChart"></canvas>
+                 <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">กราฟแสดงสัดส่วนรายรับตามช่องทาง</h3>
+                        <canvas id="myChart"></canvas>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">กราฟแสดงสัดส่วนรายจ่าย</h3>
+                        <canvas id="myExpenseChart"></canvas>
+                    </div>
                 </div>
             </section>
             
