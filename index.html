@@ -63,7 +63,7 @@
         let allTransactions = []; // Store all transactions here
 
         // Discord Webhook URL (replace with your own)
-        const DISCORD_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1417426298954846289/6DOwlCNNYkcZsJILbFhKqAvX21tp_ZulqyJji6ErC5kR24CNWdv4X-_1ktGbMI5V4ZEp";
+        const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1234567890/abcdefghijklmnopqrstuvwxyz";
 
         document.addEventListener('DOMContentLoaded', async () => {
             if (Object.keys(firebaseConfig).length > 0) {
@@ -134,7 +134,7 @@
         
         // A single function to send messages to Discord
         async function sendDiscordMessage(message, embed = null) {
-            if (!DISCORD_WEBHOOK_URL) {
+            if (DISCORD_WEBHOOK_URL === "https://discord.com/api/webhooks/1234567890/abcdefghijklmnopqrstuvwxyz") {
                 console.warn("Discord Webhook URL not set. Skipping notification.");
                 return;
             }
@@ -1079,6 +1079,16 @@
                     </table>
                 </div>
             </section>
+            
+            <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">ปฏิทินของฉัน</h2>
+                <div class="flex justify-center">
+                    <iframe src="https://calendar.google.com/calendar/embed?src=68b44e6f253c9b89f4215cc51e417104f7cd236496dd26e56d8f2690998b7e04%40group.calendar.google.com&ctz=Asia%2FBangkok" 
+                            style="border: 0" width="800" height="600" frameborder="0" scrolling="no" class="rounded-lg shadow-md">
+                    </iframe>
+                </div>
+            </section>
+
         </main>
 
         <!-- Modal for user interaction -->
@@ -1094,6 +1104,11 @@
         </div>
 
     </div>
+    <footer class="text-center p-4 text-gray-600 text-sm mt-8 border-t border-gray-300">
+        <p>ผู้ดูแล: safaree LBS</p>
+        <p>Tel. 097-197-0933</p>
+        <p>&copy; 2025 webdelivery</p>
+    </footer>
 </body>
 
 </html>
