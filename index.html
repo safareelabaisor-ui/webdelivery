@@ -988,32 +988,34 @@
 
             <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">ประวัติการทำธุรกรรม</h2>
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">วัน/เวลา</th>
-                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ช่องทาง</th>
-                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">เลขออเดอร์</th>
-                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ชื่อผู้ซื้อ</th>
-                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">คนขับ</th>
-                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">รายการ</th>
-                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">รายการสั่งซื้อ</th>
-                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">รายรับ (บาท)</th>
-                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่า GP (ไม่รวม VAT)</th>
-                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าส่วนลด (ไม่รวม VAT)</th>
-                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่า VAT</th>
-                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าวัตถุดิบ (บาท)</th>
-                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าใช้จ่ายอื่นๆ (บาท)</th>
-                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">กำไร (บาท)</th>
-                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">หมายเหตุ</th>
-                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ผู้บันทึก/แก้ไข</th>
-                            <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">จัดการ</th>
-                        </tr>
-                    </thead>
-                    <tbody id="transaction-table-body" class="bg-white divide-y divide-gray-200">
-                        <!-- Transaction rows will be injected here by JavaScript -->
-                    </tbody>
-                </table>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">วัน/เวลา</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ช่องทาง</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">เลขออเดอร์</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ชื่อผู้ซื้อ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">คนขับ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">รายการ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">รายการสั่งซื้อ</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">รายรับ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่า GP (ไม่รวม VAT)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าส่วนลด (ไม่รวม VAT)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่า VAT</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าวัตถุดิบ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าใช้จ่ายอื่นๆ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">กำไร (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">หมายเหตุ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ผู้บันทึก/แก้ไข</th>
+                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transaction-table-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Transaction rows will be injected here by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
             </section>
         </main>
 
