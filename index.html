@@ -61,6 +61,7 @@
         let userId = null;
         let myChart = null;
         let allTransactions = []; // Store all transactions here
+        let filteredTransactions = []; // Store filtered transactions for display and export
 
         // Discord Webhook URL (replace with your own)
         const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1234567890/abcdefghijklmnopqrstuvwxyz";
@@ -124,6 +125,8 @@
                 document.getElementById('filter-start-date').addEventListener('change', applyFilters);
                 document.getElementById('filter-end-date').addEventListener('change', applyFilters);
                 document.getElementById('reset-filters-btn').addEventListener('click', resetFilters);
+                document.getElementById('export-csv-btn').addEventListener('click', () => exportToCSV(filteredTransactions));
+
 
             } else {
                 console.error("Firebase config is missing. The app cannot function without it.");
@@ -352,7 +355,7 @@
             const startDate = document.getElementById('filter-start-date').value;
             const endDate = document.getElementById('filter-end-date').value;
             
-            const filteredTransactions = allTransactions.filter(transaction => {
+            filteredTransactions = allTransactions.filter(transaction => {
                 const searchMatch = !searchQuery || (
                     (transaction.order_number && transaction.order_number.toLowerCase().includes(searchQuery)) ||
                     (transaction.buyer_name && transaction.buyer_name.toLowerCase().includes(searchQuery)) ||
@@ -381,6 +384,64 @@
             document.getElementById('filter-start-date').value = '';
             document.getElementById('filter-end-date').value = '';
             applyFilters();
+        }
+
+        // Export data to CSV
+        function exportToCSV(data) {
+            if (data.length === 0) {
+                console.warn("No data to export.");
+                return;
+            }
+
+            const header = [
+                "วัน/เวลา", "ช่องทาง", "เลขออเดอร์", "ชื่อผู้ซื้อ", "คนขับ", "รายการ", "รายการสั่งซื้อ", 
+                "รายรับ (บาท)", "ค่า GP (ไม่รวม VAT)", "ค่าส่วนลด (ไม่รวม VAT)", "ค่า VAT", 
+                "ค่าวัตถุดิบ (บาท)", "ค่าใช้จ่ายอื่นๆ (บาท)", "กำไร (บาท)", "หมายเหตุ", "ผู้บันทึก/แก้ไข"
+            ].join(',');
+            
+            const csvRows = data.map(transaction => {
+                const profit = (transaction.income || 0) - ((transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0));
+                
+                const escapeCSV = (value) => {
+                    if (value === null || value === undefined) return '';
+                    let str = String(value);
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                        return `"${str.replace(/"/g, '""')}"`;
+                    }
+                    return str;
+                };
+
+                return [
+                    escapeCSV(transaction.date.split('T')[0]),
+                    escapeCSV(transaction.channel || ''),
+                    escapeCSV(transaction.order_number || ''),
+                    escapeCSV(transaction.buyer_name || ''),
+                    escapeCSV(transaction.driver_name || ''),
+                    escapeCSV(transaction.item || ''),
+                    escapeCSV(transaction.order_list || ''),
+                    escapeCSV(transaction.income || 0),
+                    escapeCSV(transaction.gp_fee_excl_vat || 0),
+                    escapeCSV(transaction.shipping_discount_fee_excl_vat || 0),
+                    escapeCSV(transaction.vat_amount || 0),
+                    escapeCSV(transaction.raw_material_cost || 0),
+                    escapeCSV(transaction.expense || 0),
+                    escapeCSV(profit),
+                    escapeCSV(transaction.note || ''),
+                    escapeCSV(transaction.recordedByUserId || '')
+                ].join(',');
+            });
+
+            const csvString = [header, ...csvRows].join('\n');
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'delivery_transactions.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            console.log("Exported to CSV successfully.");
         }
 
         // Populate month and year dropdowns
@@ -1033,22 +1094,33 @@
 
             <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">ประวัติการทำธุรกรรม</h2>
-                <div class="flex flex-col md:flex-row gap-4 mb-4">
-                    <input type="text" id="search-query" placeholder="ค้นหา: เลขออเดอร์, ชื่อผู้ซื้อ, รายการ"
-                        class="w-full md:w-1/2 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
-                    <select id="filter-channel" class="w-full md:w-1/4 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
-                        <option value="">กรองตามช่องทางทั้งหมด</option>
-                        <option value="ShopeeFood">ShopeeFood</option>
-                        <option value="Lineman">Lineman</option>
-                        <option value="อื่นๆ">อื่นๆ</option>
-                    </select>
-                    <button id="reset-filters-btn" class="w-full md:w-auto px-4 py-2 bg-gray-500 text-white font-semibold rounded-md shadow-md hover:bg-gray-600">รีเซ็ต</button>
+                <div class="flex flex-col md:flex-row gap-4 mb-4 items-end">
+                    <div class="w-full md:w-1/2">
+                        <input type="text" id="search-query" placeholder="ค้นหา: เลขออเดอร์, ชื่อผู้ซื้อ, รายการ"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                    </div>
+                    <div class="w-full md:w-1/4">
+                        <select id="filter-channel" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            <option value="">กรองตามช่องทางทั้งหมด</option>
+                            <option value="ShopeeFood">ShopeeFood</option>
+                            <option value="Lineman">Lineman</option>
+                            <option value="อื่นๆ">อื่นๆ</option>
+                        </select>
+                    </div>
+                    <div class="w-full md:w-auto flex-none flex gap-2">
+                        <button id="export-csv-btn" class="w-1/2 md:w-auto px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-md hover:bg-green-700">ดาวน์โหลด CSV</button>
+                        <button id="reset-filters-btn" class="w-1/2 md:w-auto px-4 py-2 bg-gray-500 text-white font-semibold rounded-md shadow-md hover:bg-gray-600">รีเซ็ต</button>
+                    </div>
                 </div>
                 <div class="flex flex-col md:flex-row gap-4 mb-4">
-                    <label class="block text-sm font-medium text-gray-700 w-full md:w-1/4">วันที่เริ่มต้น:</label>
-                    <input type="date" id="filter-start-date" class="w-full md:w-1/4 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
-                    <label class="block text-sm font-medium text-gray-700 w-full md:w-1/4">วันที่สิ้นสุด:</label>
-                    <input type="date" id="filter-end-date" class="w-full md:w-1/4 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                    <div class="w-full md:w-1/2 flex items-center gap-2">
+                        <label for="filter-start-date" class="block text-sm font-medium text-gray-700 whitespace-nowrap">วันที่เริ่มต้น:</label>
+                        <input type="date" id="filter-start-date" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                    </div>
+                    <div class="w-full md:w-1/2 flex items-center gap-2">
+                        <label for="filter-end-date" class="block text-sm font-medium text-gray-700 whitespace-nowrap">วันที่สิ้นสุด:</label>
+                        <input type="date" id="filter-end-date" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
