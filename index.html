@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS CDN for Excel export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <style>
         .modal {
             display: none;
@@ -146,6 +148,7 @@
                 document.getElementById('filter-end-date').addEventListener('change', applyFilters);
                 document.getElementById('reset-filters-btn').addEventListener('click', resetFilters);
                 document.getElementById('export-csv-btn').addEventListener('click', () => exportToCSV(filteredTransactions));
+                document.getElementById('export-excel-btn').addEventListener('click', () => exportToExcel(filteredTransactions));
 
 
             } else {
@@ -502,6 +505,49 @@
             link.click();
             document.body.removeChild(link);
             console.log("Exported to CSV successfully.");
+        }
+
+        // Export data to Excel
+        function exportToExcel(data) {
+            if (data.length === 0) {
+                console.warn("No data to export.");
+                return;
+            }
+
+            const header = [
+                "วัน/เวลา", "ช่องทาง", "เลขออเดอร์", "ชื่อผู้ซื้อ", "คนขับ", "รายการ", "รายการสั่งซื้อ", 
+                "รายรับ (บาท)", "ค่า GP (ไม่รวม VAT)", "ค่าส่วนลด (ไม่รวม VAT)", "ค่า VAT", 
+                "ค่าวัตถุดิบ (บาท)", "ค่าใช้จ่ายอื่นๆ (บาท)", "กำไร (บาท)", "หมายเหตุ", "ผู้บันทึก/แก้ไข (อีเมล)"
+            ];
+
+            const excelRows = data.map(transaction => {
+                const profit = (transaction.income || 0) - ((transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0));
+                
+                return [
+                    transaction.date.split('T')[0],
+                    transaction.channel || '',
+                    transaction.order_number || '',
+                    transaction.buyer_name || '',
+                    transaction.driver_name || '',
+                    transaction.item || '',
+                    transaction.order_list || '',
+                    (transaction.income || 0),
+                    (transaction.gp_fee_excl_vat || 0),
+                    (transaction.shipping_discount_fee_excl_vat || 0),
+                    (transaction.vat_amount || 0),
+                    (transaction.raw_material_cost || 0),
+                    (transaction.expense || 0),
+                    profit,
+                    transaction.note || '',
+                    transaction.recordedByUserEmail || ''
+                ];
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet([header, ...excelRows]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Transactions");
+            XLSX.writeFile(wb, "delivery_transactions.xlsx");
+            console.log("Exported to Excel successfully.");
         }
 
         // Populate month and year dropdowns
@@ -1446,6 +1492,7 @@
                     </div>
                     <div class="w-full md:w-auto flex-none flex gap-2">
                         <button id="export-csv-btn" class="w-1/2 md:w-auto px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-md hover:bg-green-700">ดาวน์โหลด CSV</button>
+                        <button id="export-excel-btn" class="w-1/2 md:w-auto px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-md hover:bg-green-700">ดาวน์โหลด Excel</button>
                         <button id="reset-filters-btn" class="w-1/2 md:w-auto px-4 py-2 bg-gray-500 text-white font-semibold rounded-md shadow-md hover:bg-gray-600">รีเซ็ต</button>
                     </div>
                 </div>
