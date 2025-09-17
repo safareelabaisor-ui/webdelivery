@@ -60,6 +60,7 @@
         let db = null;
         let userId = null;
         let myChart = null;
+        let allTransactions = []; // Store all transactions here
 
         // Discord Webhook URL (replace with your own)
         const DISCORD_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1417426298954846289/6DOwlCNNYkcZsJILbFhKqAvX21tp_ZulqyJji6ErC5kR24CNWdv4X-_1ktGbMI5V4ZEp";
@@ -116,6 +117,14 @@
                         console.error("Error signing out:", error);
                     }
                 });
+
+                // Set up event listeners for filters
+                document.getElementById('search-query').addEventListener('input', applyFilters);
+                document.getElementById('filter-channel').addEventListener('change', applyFilters);
+                document.getElementById('filter-start-date').addEventListener('change', applyFilters);
+                document.getElementById('filter-end-date').addEventListener('change', applyFilters);
+                document.getElementById('reset-filters-btn').addEventListener('click', resetFilters);
+
             } else {
                 console.error("Firebase config is missing. The app cannot function without it.");
                 document.getElementById('loading-state').innerHTML = `<p class="text-red-500 font-bold">Error: Firebase configuration is missing.</p>`;
@@ -314,14 +323,14 @@
             const q = query(transactionsColRef);
 
             onSnapshot(q, (querySnapshot) => {
-                let transactions = [];
+                allTransactions = [];
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
-                    transactions.push({ id: doc.id, ...data, timestamp: data.timestamp ? data.timestamp.toDate() : new Date() });
+                    allTransactions.push({ id: doc.id, ...data, timestamp: data.timestamp ? data.timestamp.toDate() : new Date() });
                 });
 
                 // Sort transactions by date and timestamp in memory
-                transactions.sort((a, b) => {
+                allTransactions.sort((a, b) => {
                     const dateA = new Date(a.date);
                     const dateB = new Date(b.date);
                     if (dateA - dateB !== 0) {
@@ -329,13 +338,49 @@
                     }
                     return a.timestamp - b.timestamp;
                 });
-
-                displayTransactions(transactions);
-                updateMonthlySummary(transactions);
-                updateChart(transactions);
+                
+                applyFilters();
             }, (error) => {
                 console.error("Error listening to transactions:", error);
             });
+        }
+        
+        // Apply filters to transactions
+        function applyFilters() {
+            const searchQuery = document.getElementById('search-query').value.toLowerCase();
+            const filterChannel = document.getElementById('filter-channel').value;
+            const startDate = document.getElementById('filter-start-date').value;
+            const endDate = document.getElementById('filter-end-date').value;
+            
+            const filteredTransactions = allTransactions.filter(transaction => {
+                const searchMatch = !searchQuery || (
+                    (transaction.order_number && transaction.order_number.toLowerCase().includes(searchQuery)) ||
+                    (transaction.buyer_name && transaction.buyer_name.toLowerCase().includes(searchQuery)) ||
+                    (transaction.item && transaction.item.toLowerCase().includes(searchQuery)) ||
+                    (transaction.order_list && transaction.order_list.toLowerCase().includes(searchQuery)) ||
+                    (transaction.note && transaction.note.toLowerCase().includes(searchQuery))
+                );
+
+                const channelMatch = !filterChannel || transaction.channel === filterChannel;
+
+                const dateMatch = (!startDate || new Date(transaction.date) >= new Date(startDate)) &&
+                                  (!endDate || new Date(transaction.date) <= new Date(endDate + 'T23:59:59'));
+                
+                return searchMatch && channelMatch && dateMatch;
+            });
+            
+            displayTransactions(filteredTransactions);
+            updateMonthlySummary(filteredTransactions);
+            updateChart(filteredTransactions);
+        }
+
+        // Reset all filters
+        function resetFilters() {
+            document.getElementById('search-query').value = '';
+            document.getElementById('filter-channel').value = '';
+            document.getElementById('filter-start-date').value = '';
+            document.getElementById('filter-end-date').value = '';
+            applyFilters();
         }
 
         // Populate month and year dropdowns
@@ -369,8 +414,8 @@
                 yearSelect.appendChild(option);
             }
 
-            monthSelect.addEventListener('change', () => setupDataListeners());
-            yearSelect.addEventListener('change', () => setupDataListeners());
+            monthSelect.addEventListener('change', () => applyFilters());
+            yearSelect.addEventListener('change', () => applyFilters());
         }
         
         // Update monthly summary
@@ -988,6 +1033,23 @@
 
             <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">ประวัติการทำธุรกรรม</h2>
+                <div class="flex flex-col md:flex-row gap-4 mb-4">
+                    <input type="text" id="search-query" placeholder="ค้นหา: เลขออเดอร์, ชื่อผู้ซื้อ, รายการ"
+                        class="w-full md:w-1/2 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                    <select id="filter-channel" class="w-full md:w-1/4 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                        <option value="">กรองตามช่องทางทั้งหมด</option>
+                        <option value="ShopeeFood">ShopeeFood</option>
+                        <option value="Lineman">Lineman</option>
+                        <option value="อื่นๆ">อื่นๆ</option>
+                    </select>
+                    <button id="reset-filters-btn" class="w-full md:w-auto px-4 py-2 bg-gray-500 text-white font-semibold rounded-md shadow-md hover:bg-gray-600">รีเซ็ต</button>
+                </div>
+                <div class="flex flex-col md:flex-row gap-4 mb-4">
+                    <label class="block text-sm font-medium text-gray-700 w-full md:w-1/4">วันที่เริ่มต้น:</label>
+                    <input type="date" id="filter-start-date" class="w-full md:w-1/4 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                    <label class="block text-sm font-medium text-gray-700 w-full md:w-1/4">วันที่สิ้นสุด:</label>
+                    <input type="date" id="filter-end-date" class="w-full md:w-1/4 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
