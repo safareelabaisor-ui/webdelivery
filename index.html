@@ -446,8 +446,7 @@
             
             displayTransactions(filteredTransactions);
             updateMonthlySummary(filteredTransactions);
-            updateChart(filteredTransactions);
-            updatePieChart(filteredTransactions);
+            updatePieChart(filteredTransactions); // Only update pie chart
         }
 
         // Reset all filters
@@ -619,94 +618,6 @@
             document.getElementById('monthly-profit').textContent = monthlyProfit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             document.getElementById('monthly-profit').classList.remove('text-emerald-600', 'text-rose-600');
             document.getElementById('monthly-profit').classList.add(monthlyProfit >= 0 ? 'text-emerald-600' : 'text-rose-600');
-        }
-
-        // Update the chart
-        function updateChart(transactions = []) {
-            const monthlyData = transactions.reduce((acc, transaction) => {
-                const transactionDate = new Date(transaction.date);
-                const month = transactionDate.getMonth() + 1;
-                const year = transactionDate.getFullYear();
-                const key = `${year}-${month}`;
-
-                if (!acc[key]) {
-                    acc[key] = { income: 0, expense: 0, date: transactionDate };
-                }
-
-                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
-                acc[key].income += (transaction.income || 0);
-                acc[key].expense += totalTransactionExpense;
-
-                return acc;
-            }, {});
-
-            const sortedKeys = Object.keys(monthlyData).sort();
-            const labels = sortedKeys.map(key => {
-                const [year, month] = key.split('-');
-                return `เดือน ${month}/${year}`;
-            });
-            const incomeData = sortedKeys.map(key => monthlyData[key].income);
-            const expenseData = sortedKeys.map(key => monthlyData[key].expense);
-
-            const chartData = {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'รายรับ',
-                        data: incomeData,
-                        borderColor: 'rgb(16, 185, 129)', // Tailwind's green-500
-                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                        tension: 0.1,
-                        fill: true
-                    },
-                    {
-                        label: 'รายจ่าย',
-                        data: expenseData,
-                        borderColor: 'rgb(244, 63, 94)', // Tailwind's rose-500
-                        backgroundColor: 'rgba(244, 63, 94, 0.2)',
-                        tension: 0.1,
-                        fill: true
-                    }
-                ]
-            };
-
-            if (myChart) {
-                myChart.data = chartData;
-                myChart.update();
-            } else {
-                const ctx = document.getElementById('myChart').getContext('2d');
-                myChart = new Chart(ctx, {
-                    type: 'line',
-                    data: chartData,
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        let label = context.dataset.label || '';
-                                        if (label) {
-                                            label += ': ';
-                                        }
-                                        label += context.parsed.y.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' บาท';
-                                        return label;
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    callback: function(value, index, ticks) {
-                                        return value.toLocaleString('th-TH') + ' บาท';
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
         }
 
         // Update the pie chart
@@ -1357,12 +1268,8 @@
                     <select id="summary-month" class="w-full sm:w-1/2 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></select>
                     <select id="summary-year" class="w-full sm:w-1/2 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></select>
                 </div>
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-                    <div>
-                        <h3 class="text-lg font-bold text-slate-700 mb-2">แนวโน้มรายรับ-รายจ่าย</h3>
-                        <canvas id="myChart"></canvas>
-                    </div>
-                    <div>
+                <div class="grid grid-cols-1 lg:grid-cols-1 gap-8 mt-8 justify-items-center">
+                    <div class="w-full max-w-lg">
                         <h3 class="text-lg font-bold text-slate-700 mb-2">สัดส่วนค่าใช้จ่าย</h3>
                         <canvas id="myPieChart"></canvas>
                     </div>
