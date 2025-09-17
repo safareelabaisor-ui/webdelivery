@@ -88,7 +88,6 @@
         let db = null;
         let userEmail = null; // Changed from userId
         let myChart = null;
-        let myPieChart = null;
         let allTransactions = []; // Store all transactions here
         let filteredTransactions = []; // Store filtered transactions for display and export
         let allRecipes = [];
@@ -446,7 +445,7 @@
             
             displayTransactions(filteredTransactions);
             updateMonthlySummary(filteredTransactions);
-            updatePieChart(filteredTransactions); // Only update pie chart
+            updateChart(filteredTransactions);
         }
 
         // Reset all filters
@@ -620,73 +619,85 @@
             document.getElementById('monthly-profit').classList.add(monthlyProfit >= 0 ? 'text-emerald-600' : 'text-rose-600');
         }
 
-        // Update the pie chart
-        function updatePieChart(transactions = []) {
-            const selectedMonth = parseInt(document.getElementById('summary-month').value);
-            const selectedYear = parseInt(document.getElementById('summary-year').value);
-
-            let monthlyExpenses = {
-                gp: 0,
-                shipping: 0,
-                vat: 0,
-                raw_material: 0,
-                other: 0
-            };
-
-            transactions.forEach(transaction => {
+        // Update the chart
+        function updateChart(transactions = []) {
+            const monthlyData = transactions.reduce((acc, transaction) => {
                 const transactionDate = new Date(transaction.date);
-                if (transactionDate.getMonth() + 1 === selectedMonth && transactionDate.getFullYear() === selectedYear) {
-                    monthlyExpenses.gp += (transaction.gp_fee_excl_vat || 0);
-                    monthlyExpenses.shipping += (transaction.shipping_discount_fee_excl_vat || 0);
-                    monthlyExpenses.vat += (transaction.vat_amount || 0);
-                    monthlyExpenses.raw_material += (transaction.raw_material_cost || 0);
-                    monthlyExpenses.other += (transaction.expense || 0);
-                }
-            });
+                const month = transactionDate.getMonth() + 1;
+                const year = transactionDate.getFullYear();
+                const key = `${year}-${month}`;
 
-            const pieChartData = {
-                labels: ['ค่า GP', 'ค่าส่วนลดค่าส่ง', 'ค่า VAT', 'ค่าวัตถุดิบ', 'ค่าใช้จ่ายอื่นๆ'],
-                datasets: [{
-                    data: [
-                        monthlyExpenses.gp,
-                        monthlyExpenses.shipping,
-                        monthlyExpenses.vat,
-                        monthlyExpenses.raw_material,
-                        monthlyExpenses.other
-                    ],
-                    backgroundColor: [
-                        'rgb(244, 63, 94)', // rose-500
-                        'rgb(249, 115, 22)', // orange-500
-                        'rgb(59, 130, 246)', // blue-500
-                        'rgb(16, 185, 129)', // emerald-500
-                        'rgb(148, 163, 184)', // slate-400
-                    ],
-                    hoverOffset: 4
-                }]
+                if (!acc[key]) {
+                    acc[key] = { income: 0, expense: 0, date: transactionDate };
+                }
+
+                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
+                acc[key].income += (transaction.income || 0);
+                acc[key].expense += totalTransactionExpense;
+
+                return acc;
+            }, {});
+
+            const sortedKeys = Object.keys(monthlyData).sort();
+            const labels = sortedKeys.map(key => {
+                const [year, month] = key.split('-');
+                return `เดือน ${month}/${year}`;
+            });
+            const incomeData = sortedKeys.map(key => monthlyData[key].income);
+            const expenseData = sortedKeys.map(key => monthlyData[key].expense);
+
+            const chartData = {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'รายรับ',
+                        data: incomeData,
+                        borderColor: 'rgb(16, 185, 129)', // Tailwind's green-500
+                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                        tension: 0.1,
+                        fill: true
+                    },
+                    {
+                        label: 'รายจ่าย',
+                        data: expenseData,
+                        borderColor: 'rgb(244, 63, 94)', // Tailwind's rose-500
+                        backgroundColor: 'rgba(244, 63, 94, 0.2)',
+                        tension: 0.1,
+                        fill: true
+                    }
+                ]
             };
-            
-            if (myPieChart) {
-                myPieChart.data = pieChartData;
-                myPieChart.update();
+
+            if (myChart) {
+                myChart.data = chartData;
+                myChart.update();
             } else {
-                const ctxPie = document.getElementById('myPieChart').getContext('2d');
-                myPieChart = new Chart(ctxPie, {
-                    type: 'pie',
-                    data: pieChartData,
+                const ctx = document.getElementById('myChart').getContext('2d');
+                myChart = new Chart(ctx, {
+                    type: 'line',
+                    data: chartData,
                     options: {
                         responsive: true,
                         plugins: {
-                            legend: {
-                                position: 'top',
-                            },
                             tooltip: {
                                 callbacks: {
                                     label: function(context) {
-                                        const label = context.label || '';
-                                        const value = context.parsed || 0;
-                                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                        const percentage = total > 0 ? (value / total * 100).toFixed(2) : 0;
-                                        return `${label}: ${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท (${percentage}%)`;
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        label += context.parsed.y.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' บาท';
+                                        return label;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value, index, ticks) {
+                                        return value.toLocaleString('th-TH') + ' บาท';
                                     }
                                 }
                             }
@@ -718,7 +729,7 @@
 
                 const profit = (transaction.income || 0) - totalTransactionExpense;
                 const row = document.createElement('tr');
-                row.classList.add('hover:bg-slate-100', 'text-slate-700', 'text-sm');
+                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
                 const transactionData = {
                     id: transaction.id,
                     note: transaction.note || '',
@@ -749,7 +760,7 @@
                     <td class="px-4 py-2 border-b text-right">${(transaction.vat_amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="px-4 py-2 border-b text-right">${(transaction.raw_material_cost || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="px-4 py-2 border-b text-right">${(transaction.expense || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2 border-b text-right ${profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${profit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right ${profit >= 0 ? 'text-teal-600' : 'text-rose-600'}">${profit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="px-4 py-2 border-b">${transaction.note || ''}</td>
                     <td class="px-4 py-2 border-b text-sm font-mono whitespace-nowrap">${transaction.recordedByUserEmail || ''}</td>
                     <td class="px-4 py-2 border-b text-center space-x-2 whitespace-nowrap">
@@ -764,7 +775,7 @@
             totalExpenseEl.textContent = totalExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             totalProfitEl.textContent = (totalIncome - totalExpense).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             totalProfitEl.classList.remove('text-teal-600', 'text-rose-600');
-            totalProfitEl.classList.add((totalIncome - totalExpense) >= 0 ? 'text-emerald-400' : 'text-rose-400');
+            totalProfitEl.classList.add((totalIncome - totalExpense) >= 0 ? 'text-teal-600' : 'text-rose-600');
         }
 
         // Modal Logic
@@ -1081,7 +1092,7 @@
             }
             recipes.forEach(recipe => {
                 const row = document.createElement('tr');
-                row.classList.add('hover:bg-slate-100', 'text-slate-700', 'text-sm');
+                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
                 const rawMaterialsList = recipe.raw_materials.map(mat => `${mat.name} (${mat.quantity} ${mat.unit})`).join(', ');
                 row.innerHTML = `
                     <td class="px-4 py-2 border-b font-semibold">${recipe.finished_product}</td>
@@ -1268,11 +1279,22 @@
                     <select id="summary-month" class="w-full sm:w-1/2 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></select>
                     <select id="summary-year" class="w-full sm:w-1/2 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></select>
                 </div>
-                <div class="grid grid-cols-1 lg:grid-cols-1 gap-8 mt-8 justify-items-center">
-                    <div class="w-full max-w-lg">
-                        <h3 class="text-lg font-bold text-slate-700 mb-2">สัดส่วนค่าใช้จ่าย</h3>
-                        <canvas id="myPieChart"></canvas>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                    <div class="bg-indigo-100 p-6 rounded-xl shadow-sm">
+                        <p class="text-lg text-indigo-800">รายรับรายเดือน</p>
+                        <p class="text-4xl font-extrabold text-indigo-600 mt-2">฿<span id="monthly-income">0.00</span></p>
                     </div>
+                    <div class="bg-rose-100 p-6 rounded-xl shadow-sm">
+                        <p class="text-lg text-rose-800">รายจ่ายรายเดือน</p>
+                        <p class="text-4xl font-extrabold text-rose-600 mt-2">฿<span id="monthly-expense">0.00</span></p>
+                    </div>
+                    <div class="bg-emerald-100 p-6 rounded-xl shadow-sm">
+                        <p class="text-lg text-emerald-800">กำไรรายเดือน</p>
+                        <p class="text-4xl font-extrabold text-emerald-600 mt-2">฿<span id="monthly-profit">0.00</span></p>
+                    </div>
+                </div>
+                <div class="mt-8">
+                    <canvas id="myChart"></canvas>
                 </div>
             </section>
             
@@ -1555,3 +1577,4 @@
 </body>
 
 </html>
+
