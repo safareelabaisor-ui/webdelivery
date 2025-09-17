@@ -438,7 +438,7 @@
                 const channelMatch = !filterChannel || transaction.channel === filterChannel;
 
                 const dateMatch = (!startDate || new Date(transaction.date) >= new Date(startDate)) &&
-                                  (!endDate || new Date(transaction.date) <= new Date(endDate + 'T23:59:59'));
+                                 (!endDate || new Date(transaction.date) <= new Date(endDate + 'T23:59:59'));
                 
                 return searchMatch && channelMatch && dateMatch;
             });
@@ -621,51 +621,29 @@
 
         // Update the chart
         function updateChart(transactions = []) {
-            const monthlyData = transactions.reduce((acc, transaction) => {
-                const transactionDate = new Date(transaction.date);
-                const month = transactionDate.getMonth() + 1;
-                const year = transactionDate.getFullYear();
-                const key = `${year}-${month}`;
-
-                if (!acc[key]) {
-                    acc[key] = { income: 0, expense: 0, date: transactionDate };
-                }
-
-                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
-                acc[key].income += (transaction.income || 0);
-                acc[key].expense += totalTransactionExpense;
-
+            const channelData = transactions.reduce((acc, transaction) => {
+                const channel = transaction.channel || 'ไม่ระบุ';
+                acc[channel] = (acc[channel] || 0) + (transaction.income || 0);
                 return acc;
             }, {});
 
-            const sortedKeys = Object.keys(monthlyData).sort();
-            const labels = sortedKeys.map(key => {
-                const [year, month] = key.split('-');
-                return `เดือน ${month}/${year}`;
-            });
-            const incomeData = sortedKeys.map(key => monthlyData[key].income);
-            const expenseData = sortedKeys.map(key => monthlyData[key].expense);
+            const labels = Object.keys(channelData);
+            const data = Object.values(channelData);
+            const backgroundColors = [
+                'rgb(16, 185, 129)',  // Emerald-500
+                'rgb(99, 102, 241)',  // Indigo-500
+                'rgb(244, 63, 94)',   // Rose-500
+                'rgb(245, 158, 11)',  // Amber-500
+                'rgb(59, 130, 246)'   // Blue-500
+            ];
 
             const chartData = {
                 labels: labels,
-                datasets: [
-                    {
-                        label: 'รายรับ',
-                        data: incomeData,
-                        borderColor: 'rgb(16, 185, 129)', // Tailwind's green-500
-                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                        tension: 0.1,
-                        fill: true
-                    },
-                    {
-                        label: 'รายจ่าย',
-                        data: expenseData,
-                        borderColor: 'rgb(244, 63, 94)', // Tailwind's rose-500
-                        backgroundColor: 'rgba(244, 63, 94, 0.2)',
-                        tension: 0.1,
-                        fill: true
-                    }
-                ]
+                datasets: [{
+                    data: data,
+                    backgroundColor: backgroundColors,
+                    hoverOffset: 4
+                }]
             };
 
             if (myChart) {
@@ -674,30 +652,22 @@
             } else {
                 const ctx = document.getElementById('myChart').getContext('2d');
                 myChart = new Chart(ctx, {
-                    type: 'line',
+                    type: 'pie', // Changed to 'pie' type
                     data: chartData,
                     options: {
                         responsive: true,
                         plugins: {
+                            legend: {
+                                position: 'top',
+                            },
                             tooltip: {
                                 callbacks: {
                                     label: function(context) {
-                                        let label = context.dataset.label || '';
-                                        if (label) {
-                                            label += ': ';
-                                        }
-                                        label += context.parsed.y.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' บาท';
-                                        return label;
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    callback: function(value, index, ticks) {
-                                        return value.toLocaleString('th-TH') + ' บาท';
+                                        let label = context.label || '';
+                                        const value = context.parsed;
+                                        const total = context.dataset.data.reduce((sum, current) => sum + current, 0);
+                                        const percentage = ((value / total) * 100).toFixed(2);
+                                        return `${label}: ${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท (${percentage}%)`;
                                     }
                                 }
                             }
@@ -1293,7 +1263,8 @@
                         <p class="text-4xl font-extrabold text-emerald-600 mt-2">฿<span id="monthly-profit">0.00</span></p>
                     </div>
                 </div>
-                <div class="mt-8">
+                 <div class="mt-8">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">กราฟแสดงสัดส่วนรายรับตามช่องทาง</h3>
                     <canvas id="myChart"></canvas>
                 </div>
             </section>
@@ -1577,4 +1548,3 @@
 </body>
 
 </html>
-
