@@ -5,12 +5,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>บัญชีเดลิเวอรี่ รายรับ-รายจ่าย ร้านโครตจะแมน</title>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- SheetJS CDN for Excel export -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
         .modal {
             display: none;
             position: fixed;
@@ -30,8 +38,8 @@
             background-color: #fefefe;
             margin: auto;
             padding: 24px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
             max-width: 400px;
             width: 90%;
             text-align: center;
@@ -361,7 +369,7 @@
                 tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลสินค้าคงคลัง</td></tr>`;
             }
             items.forEach(item => {
-                const statusColor = item.current_stock <= item.low_threshold ? 'text-red-600 font-bold' : 'text-green-600';
+                const statusColor = item.current_stock <= item.low_threshold ? 'text-rose-600 font-bold' : 'text-emerald-600';
                 const row = document.createElement('tr');
                 row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
                 row.innerHTML = `
@@ -1213,26 +1221,26 @@
     </script>
 </head>
 
-<body class="bg-gray-100 font-sans leading-normal tracking-normal">
+<body class="bg-gray-100 font-sans leading-normal tracking-normal bg-slate-50">
     <div class="container mx-auto p-4 md:p-8">
         <header class="text-center mb-8">
-            <h1 class="text-4xl font-extrabold text-gray-800">บัญชีเดลิเวอรี่ รายรับ-รายจ่าย</h1>
-            <p class="text-lg text-gray-600 mt-2">สำหรับร้านโครตจะแมนฮาลาล เดลิเวอรี่</p>
+            <h1 class="text-4xl font-extrabold text-slate-800">บัญชีเดลิเวอรี่ รายรับ-รายจ่าย</h1>
+            <p class="text-lg text-slate-600 mt-2">สำหรับร้านโครตจะแมนฮาลาล เดลิเวอรี่</p>
         </header>
 
-        <div id="low-stock-alert" class="hidden fixed top-0 left-0 right-0 bg-red-500 text-white p-4 text-center z-50">
+        <div id="low-stock-alert" class="hidden fixed top-0 left-0 right-0 bg-rose-500 text-white p-4 text-center z-50 shadow-lg">
         </div>
 
         <div id="loading-state" class="flex flex-col items-center justify-center min-h-[50vh]">
-            <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-gray-900 mx-auto"></div>
-            <p class="mt-4 text-gray-600">กำลังเชื่อมต่อฐานข้อมูล...</p>
+            <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-slate-900 mx-auto"></div>
+            <p class="mt-4 text-slate-600">กำลังเชื่อมต่อฐานข้อมูล...</p>
         </div>
         
         <div id="login-content" class="flex flex-col items-center justify-center min-h-[50vh] hidden">
-            <div class="bg-white p-8 rounded-lg shadow-xl text-center">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">ยินดีต้อนรับ</h2>
-                <p class="text-gray-600 mb-6">เข้าสู่ระบบด้วยบัญชี Google เพื่อเริ่มบันทึกข้อมูล</p>
-                <button id="login-btn" class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-md shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <div class="bg-white p-8 rounded-xl shadow-xl text-center border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">ยินดีต้อนรับ</h2>
+                <p class="text-slate-600 mb-6">เข้าสู่ระบบด้วยบัญชี Google เพื่อเริ่มบันทึกข้อมูล</p>
+                <button id="login-btn" class="px-8 py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transform transition-transform duration-200 hover:scale-105">
                     เข้าสู่ระบบด้วย Google
                 </button>
             </div>
@@ -1240,49 +1248,49 @@
 
         <main id="main-content" class="hidden">
             <div class="flex justify-end mb-4">
-                <button id="logout-btn" class="px-4 py-2 bg-gray-500 text-white font-semibold rounded-md shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400">ออกจากระบบ</button>
+                <button id="logout-btn" class="px-4 py-2 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400">ออกจากระบบ</button>
             </div>
             
-            <div class="bg-yellow-100 p-3 rounded-lg text-yellow-800 text-sm mb-4">
-                💡 ผู้ใช้: <span id="user-id" class="font-mono break-all"></span>
+            <div class="bg-slate-100 p-3 rounded-lg text-slate-800 text-sm mb-6 shadow-sm border border-slate-200">
+                💡 ผู้ใช้: <span id="user-id" class="font-mono break-all font-bold text-indigo-600"></span>
             </div>
 
-            <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">สรุปยอดทั้งหมด</h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                    <div class="bg-teal-700 p-4 rounded-lg shadow-sm">
-                        <p class="text-lg text-white">รายรับรวม</p>
-                        <p class="text-3xl font-extrabold text-white mt-1">฿<span id="total-income">0.00</span></p>
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">สรุปยอดทั้งหมด</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                    <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
+                        <p class="text-lg text-slate-200">รายรับรวม</p>
+                        <p class="text-4xl font-extrabold text-emerald-400 mt-2">฿<span id="total-income">0.00</span></p>
                     </div>
-                    <div class="bg-rose-700 p-4 rounded-lg shadow-sm">
-                        <p class="text-lg text-white">รายจ่ายรวม</p>
-                        <p class="text-3xl font-extrabold text-white mt-1">฿<span id="total-expense">0.00</span></p>
+                    <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
+                        <p class="text-lg text-slate-200">รายจ่ายรวม</p>
+                        <p class="text-4xl font-extrabold text-rose-400 mt-2">฿<span id="total-expense">0.00</span></p>
                     </div>
-                    <div class="bg-teal-700 p-4 rounded-lg shadow-sm">
-                        <p class="text-lg text-white">กำไร/ขาดทุน</p>
-                        <p class="text-3xl font-extrabold text-white mt-1">฿<span id="total-profit">0.00</span></p>
+                    <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
+                        <p class="text-lg text-slate-200">กำไร/ขาดทุน</p>
+                        <p class="text-4xl font-extrabold text-white mt-2">฿<span id="total-profit">0.00</span></p>
                     </div>
                 </div>
             </section>
             
-            <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">สรุปยอดรายเดือน</h2>
-                <div class="flex flex-col sm:flex-row gap-4 mb-4">
-                    <select id="summary-month" class="w-full sm:w-1/2 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400"></select>
-                    <select id="summary-year" class="w-full sm:w-1/2 px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400"></select>
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">สรุปยอดรายเดือน</h2>
+                <div class="flex flex-col sm:flex-row gap-4 mb-6">
+                    <select id="summary-month" class="w-full sm:w-1/2 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></select>
+                    <select id="summary-year" class="w-full sm:w-1/2 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></select>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                    <div class="bg-sky-200 p-4 rounded-lg shadow-sm">
-                        <p class="text-lg text-gray-600">รายรับรายเดือน</p>
-                        <p class="text-3xl font-extrabold text-sky-800 mt-1">฿<span id="monthly-income">0.00</span></p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                    <div class="bg-indigo-100 p-6 rounded-xl shadow-sm">
+                        <p class="text-lg text-indigo-800">รายรับรายเดือน</p>
+                        <p class="text-4xl font-extrabold text-indigo-600 mt-2">฿<span id="monthly-income">0.00</span></p>
                     </div>
-                    <div class="bg-rose-200 p-4 rounded-lg shadow-sm">
-                        <p class="text-lg text-gray-600">รายจ่ายรายเดือน</p>
-                        <p class="text-3xl font-extrabold text-rose-800 mt-1">฿<span id="monthly-expense">0.00</span></p>
+                    <div class="bg-rose-100 p-6 rounded-xl shadow-sm">
+                        <p class="text-lg text-rose-800">รายจ่ายรายเดือน</p>
+                        <p class="text-4xl font-extrabold text-rose-600 mt-2">฿<span id="monthly-expense">0.00</span></p>
                     </div>
-                    <div class="bg-emerald-200 p-4 rounded-lg shadow-sm">
-                        <p class="text-lg text-gray-600">กำไรรายเดือน</p>
-                        <p class="text-3xl font-extrabold text-emerald-800 mt-1">฿<span id="monthly-profit">0.00</span></p>
+                    <div class="bg-emerald-100 p-6 rounded-xl shadow-sm">
+                        <p class="text-lg text-emerald-800">กำไรรายเดือน</p>
+                        <p class="text-4xl font-extrabold text-emerald-600 mt-2">฿<span id="monthly-profit">0.00</span></p>
                     </div>
                 </div>
                 <div class="mt-8">
@@ -1290,18 +1298,18 @@
                 </div>
             </section>
             
-            <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">เพิ่มรายการใหม่</h2>
-                <form id="transaction-form" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">เพิ่มรายการใหม่</h2>
+                <form id="transaction-form" class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
-                        <label for="date" class="block text-sm font-medium text-gray-700 mb-1">วัน/เวลา</label>
+                        <label for="date" class="block text-sm font-semibold text-slate-700 mb-1">วัน/เวลา</label>
                         <input type="datetime-local" id="date" name="date" required
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="channel" class="block text-sm font-medium text-gray-700 mb-1">ช่องทาง</label>
+                        <label for="channel" class="block text-sm font-semibold text-slate-700 mb-1">ช่องทาง</label>
                         <select id="channel" name="channel" required
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                             <option value="">เลือกช่องทาง</option>
                             <option value="ShopeeFood">ShopeeFood</option>
                             <option value="Lineman">Lineman</option>
@@ -1309,165 +1317,165 @@
                         </select>
                     </div>
                     <div>
-                        <label for="order_number" class="block text-sm font-medium text-gray-700 mb-1">เลขออเดอร์</label>
+                        <label for="order_number" class="block text-sm font-semibold text-slate-700 mb-1">เลขออเดอร์</label>
                         <input type="text" id="order_number" name="order_number" placeholder="ใส่เลขออเดอร์"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="buyer_name" class="block text-sm font-medium text-gray-700 mb-1">ชื่อผู้ซื้อ</label>
+                        <label for="buyer_name" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อผู้ซื้อ</label>
                         <input type="text" id="buyer_name" name="buyer_name" placeholder="ชื่อผู้ซื้อ"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="driver_name" class="block text-sm font-medium text-gray-700 mb-1">คนขับ</label>
+                        <label for="driver_name" class="block text-sm font-semibold text-slate-700 mb-1">คนขับ</label>
                         <input type="text" id="driver_name" name="driver_name" placeholder="ชื่อคนขับ"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="item" class="block text-sm font-medium text-gray-700 mb-1">รายการ</label>
+                        <label for="item" class="block text-sm font-semibold text-slate-700 mb-1">รายการ</label>
                         <input type="text" id="item" name="item" placeholder="เช่น ก๋วยเตี๋ยว, ข้าวผัด"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div class="md:col-span-3">
-                        <label for="order_list" class="block text-sm font-medium text-gray-700 mb-1">รายการสั่งซื้อ</label>
+                        <label for="order_list" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ</label>
                         <textarea id="order_list" name="order_list" rows="3" placeholder="เช่น ก๋วยเตี๋ยว, ข้าวไข่เจียว"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400"></textarea>
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></textarea>
                     </div>
                     <div>
-                        <label for="income" class="block text-sm font-medium text-gray-700 mb-1">รายรับ</label>
+                        <label for="income" class="block text-sm font-semibold text-slate-700 mb-1">รายรับ</label>
                         <input type="number" id="income" name="income" step="0.01" value="0.00"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="gp_fee_excl_vat" class="block text-sm font-medium text-gray-700 mb-1">ค่าใช้จ่าย GP (ไม่รวม VAT)</label>
+                        <label for="gp_fee_excl_vat" class="block text-sm font-semibold text-slate-700 mb-1">ค่าใช้จ่าย GP (ไม่รวม VAT)</label>
                         <input type="number" id="gp_fee_excl_vat" name="gp_fee_excl_vat" step="0.01" value="0.00"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="shipping_discount_fee_excl_vat" class="block text-sm font-medium text-gray-700 mb-1">ค่าส่วนลดค่าส่ง (ไม่รวม VAT)</label>
+                        <label for="shipping_discount_fee_excl_vat" class="block text-sm font-semibold text-slate-700 mb-1">ค่าส่วนลดค่าส่ง (ไม่รวม VAT)</label>
                         <input type="number" id="shipping_discount_fee_excl_vat" name="shipping_discount_fee_excl_vat" step="0.01" value="0.00"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="vat_amount" class="block text-sm font-medium text-gray-700 mb-1">ค่า VAT</label>
+                        <label for="vat_amount" class="block text-sm font-semibold text-slate-700 mb-1">ค่า VAT</label>
                         <input type="number" id="vat_amount" name="vat_amount" step="0.01" value="0.00"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="raw_material_cost" class="block text-sm font-medium text-gray-700 mb-1">ค่าวัตถุดิบ</label>
+                        <label for="raw_material_cost" class="block text-sm font-semibold text-slate-700 mb-1">ค่าวัตถุดิบ</label>
                         <input type="number" id="raw_material_cost" name="raw_material_cost" step="0.01" value="0.00"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="expense" class="block text-sm font-medium text-gray-700 mb-1">ค่าใช้จ่ายอื่นๆ</label>
+                        <label for="expense" class="block text-sm font-semibold text-slate-700 mb-1">ค่าใช้จ่ายอื่นๆ</label>
                         <input type="number" id="expense" name="expense" step="0.01" value="0.00"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div class="md:col-span-3">
-                        <label for="note" class="block text-sm font-medium text-gray-700 mb-1">หมายเหตุ</label>
+                        <label for="note" class="block text-sm font-semibold text-slate-700 mb-1">หมายเหตุ</label>
                         <input type="text" id="note" name="note" placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div class="md:col-span-3 text-right">
                         <button type="submit"
-                            class="mt-4 px-6 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            class="mt-4 px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transform transition-transform duration-200 hover:scale-105">
                             บันทึกรายการ
                         </button>
                     </div>
                 </form>
             </section>
             
-            <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">จัดการสินค้าคงคลัง</h2>
-                <form id="inventory-form" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">จัดการสินค้าคงคลัง</h2>
+                <form id="inventory-form" class="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div>
-                        <label for="inventory-name" class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
+                        <label for="inventory-name" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อวัตถุดิบ</label>
                         <input type="text" id="inventory-name" name="inventory-name" required placeholder="เช่น ไข่ไก่, เส้นก๋วยเตี๋ยว"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-green-200 focus:border-green-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="inventory-unit" class="block text-sm font-medium text-gray-700 mb-1">หน่วยนับ</label>
+                        <label for="inventory-unit" class="block text-sm font-semibold text-slate-700 mb-1">หน่วยนับ</label>
                         <input type="text" id="inventory-unit" name="inventory-unit" required placeholder="เช่น ฟอง, กิโลกรัม"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-green-200 focus:border-green-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="inventory-stock" class="block text-sm font-medium text-gray-700 mb-1">สต็อกปัจจุบัน</label>
+                        <label for="inventory-stock" class="block text-sm font-semibold text-slate-700 mb-1">สต็อกปัจจุบัน</label>
                         <input type="number" id="inventory-stock" name="inventory-stock" step="1" required value="0"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-green-200 focus:border-green-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="inventory-threshold" class="block text-sm font-medium text-gray-700 mb-1">เกณฑ์แจ้งเตือนสต็อกต่ำ</label>
+                        <label for="inventory-threshold" class="block text-sm font-semibold text-slate-700 mb-1">เกณฑ์แจ้งเตือนสต็อกต่ำ</label>
                         <input type="number" id="inventory-threshold" name="inventory-threshold" step="1" required value="0"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-green-200 focus:border-green-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div class="md:col-span-4 text-right">
-                        <button type="submit" class="mt-4 px-6 py-2 bg-green-600 text-white font-semibold rounded-md shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                        <button type="submit" class="mt-4 px-8 py-3 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transform transition-transform duration-200 hover:scale-105">
                             เพิ่ม/อัปเดตสต็อก
                         </button>
                     </div>
                 </form>
-                <div class="overflow-x-auto mt-8">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
+                <div class="overflow-x-auto mt-8 rounded-xl shadow-sm border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
                             <tr>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ชื่อวัตถุดิบ</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">หน่วยนับ</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">สต็อกปัจจุบัน</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">เกณฑ์ต่ำสุด</th>
-                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">จัดการ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ชื่อวัตถุดิบ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">หน่วยนับ</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">สต็อกปัจจุบัน</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">เกณฑ์ต่ำสุด</th>
+                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
                             </tr>
                         </thead>
-                        <tbody id="inventory-table-body" class="bg-white divide-y divide-gray-200">
+                        <tbody id="inventory-table-body" class="bg-white divide-y divide-slate-200">
                             <!-- Inventory rows will be injected here by JavaScript -->
                         </tbody>
                     </table>
                 </div>
             </section>
             
-            <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">จัดการสูตรวัตถุดิบ</h2>
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">จัดการสูตรวัตถุดิบ</h2>
                 <form id="recipe-form" class="space-y-4">
                     <div>
-                        <label for="finished-product-name" class="block text-sm font-medium text-gray-700 mb-1">ชื่อเมนู/สินค้าสำเร็จรูป</label>
-                        <input type="text" id="finished-product-name" placeholder="เช่น ก๋วยเตี๋ยว" required class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                        <label for="finished-product-name" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อเมนู/สินค้าสำเร็จรูป</label>
+                        <input type="text" id="finished-product-name" placeholder="เช่น ก๋วยเตี๋ยว" required class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div id="raw-materials-container" class="space-y-2">
                         <!-- Raw material inputs will be added here -->
                         <div class="flex space-x-2 items-end">
                             <div class="flex-1">
-                                <label for="raw-material-name-0" class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
-                                <input type="text" id="raw-material-name-0" name="raw_material_name" placeholder="เช่น เส้นก๋วยเตี๋ยว" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                                <label for="raw-material-name-0" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อวัตถุดิบ</label>
+                                <input type="text" id="raw-material-name-0" name="raw_material_name" placeholder="เช่น เส้นก๋วยเตี๋ยว" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
                             </div>
                             <div class="flex-1">
-                                <label for="raw-material-quantity-0" class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
-                                <input type="number" id="raw-material-quantity-0" name="raw_material_quantity" value="1" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                                <label for="raw-material-quantity-0" class="block text-sm font-semibold text-slate-700 mb-1">ปริมาณ</label>
+                                <input type="number" id="raw-material-quantity-0" name="raw_material_quantity" value="1" step="0.01" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
                             </div>
                             <div class="flex-1">
-                                <label for="raw-material-unit-0" class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
-                                <input type="text" id="raw-material-unit-0" name="raw_material_unit" placeholder="เช่น กรัม" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                                <label for="raw-material-unit-0" class="block text-sm font-semibold text-slate-700 mb-1">หน่วย</label>
+                                <input type="text" id="raw-material-unit-0" name="raw_material_unit" placeholder="เช่น กรัม" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
                             </div>
-                            <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
+                            <button type="button" onclick="this.parentNode.remove()" class="px-4 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600">ลบ</button>
                         </div>
                     </div>
-                    <div class="flex space-x-2">
-                        <button type="button" id="add-raw-material-btn" class="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
+                    <div class="flex space-x-2 mt-4">
+                        <button type="button" id="add-raw-material-btn" class="flex-1 px-4 py-2 bg-slate-200 text-slate-800 rounded-lg shadow-sm hover:bg-slate-300">
                             เพิ่มวัตถุดิบ
                         </button>
-                        <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <button type="submit" class="flex-1 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                             บันทึกสูตร
                         </button>
                     </div>
                 </form>
-                <div class="overflow-x-auto mt-8">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
+                <div class="overflow-x-auto mt-8 rounded-xl shadow-sm border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
                             <tr>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">เมนู/สินค้า</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">สูตรวัตถุดิบ</th>
-                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">จัดการ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">เมนู/สินค้า</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">สูตรวัตถุดิบ</th>
+                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
                             </tr>
                         </thead>
-                        <tbody id="recipe-table-body" class="bg-white divide-y divide-gray-200">
+                        <tbody id="recipe-table-body" class="bg-white divide-y divide-slate-200">
                             <!-- Recipe rows will be injected here by JavaScript -->
                         </tbody>
                     </table>
@@ -1475,15 +1483,15 @@
             </section>
 
 
-            <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">ประวัติการทำธุรกรรม</h2>
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">ประวัติการทำธุรกรรม</h2>
                 <div class="flex flex-col md:flex-row gap-4 mb-4 items-end">
                     <div class="w-full md:w-1/2">
                         <input type="text" id="search-query" placeholder="ค้นหา: เลขออเดอร์, ชื่อผู้ซื้อ, รายการ"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div class="w-full md:w-1/4">
-                        <select id="filter-channel" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                        <select id="filter-channel" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                             <option value="">กรองตามช่องทางทั้งหมด</option>
                             <option value="ShopeeFood">ShopeeFood</option>
                             <option value="Lineman">Lineman</option>
@@ -1491,56 +1499,56 @@
                         </select>
                     </div>
                     <div class="w-full md:w-auto flex-none flex gap-2">
-                        <button id="export-csv-btn" class="w-1/2 md:w-auto px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-md hover:bg-green-700">ดาวน์โหลด CSV</button>
-                        <button id="export-excel-btn" class="w-1/2 md:w-auto px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-md hover:bg-green-700">ดาวน์โหลด Excel</button>
-                        <button id="reset-filters-btn" class="w-1/2 md:w-auto px-4 py-2 bg-gray-500 text-white font-semibold rounded-md shadow-md hover:bg-gray-600">รีเซ็ต</button>
+                        <button id="export-csv-btn" class="w-1/2 md:w-auto px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700">ดาวน์โหลด CSV</button>
+                        <button id="export-excel-btn" class="w-1/2 md:w-auto px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700">ดาวน์โหลด Excel</button>
+                        <button id="reset-filters-btn" class="w-1/2 md:w-auto px-4 py-2 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600">รีเซ็ต</button>
                     </div>
                 </div>
                 <div class="flex flex-col md:flex-row gap-4 mb-4">
                     <div class="w-full md:w-1/2 flex items-center gap-2">
-                        <label for="filter-start-date" class="block text-sm font-medium text-gray-700 whitespace-nowrap">วันที่เริ่มต้น:</label>
-                        <input type="date" id="filter-start-date" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                        <label for="filter-start-date" class="block text-sm font-semibold text-slate-700 whitespace-nowrap">วันที่เริ่มต้น:</label>
+                        <input type="date" id="filter-start-date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div class="w-full md:w-1/2 flex items-center gap-2">
-                        <label for="filter-end-date" class="block text-sm font-medium text-gray-700 whitespace-nowrap">วันที่สิ้นสุด:</label>
-                        <input type="date" id="filter-end-date" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200 focus:border-blue-400">
+                        <label for="filter-end-date" class="block text-sm font-semibold text-slate-700 whitespace-nowrap">วันที่สิ้นสุด:</label>
+                        <input type="date" id="filter-end-date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
+                <div class="overflow-x-auto rounded-xl shadow-sm border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
                             <tr>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">วัน/เวลา</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ช่องทาง</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">เลขออเดอร์</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ชื่อผู้ซื้อ</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">คนขับ</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">รายการ</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">รายการสั่งซื้อ</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">รายรับ (บาท)</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่า GP (ไม่รวม VAT)</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าส่วนลด (ไม่รวม VAT)</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่า VAT</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าวัตถุดิบ (บาท)</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">ค่าใช้จ่ายอื่นๆ (บาท)</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">กำไร (บาท)</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">หมายเหตุ</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ผู้บันทึก/แก้ไข (อีเมล)</th>
-                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">จัดการ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">วัน/เวลา</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ช่องทาง</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">เลขออเดอร์</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ชื่อผู้ซื้อ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">คนขับ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการสั่งซื้อ</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">รายรับ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่า GP (ไม่รวม VAT)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าส่วนลด (ไม่รวม VAT)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่า VAT</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าวัตถุดิบ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าใช้จ่ายอื่นๆ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">กำไร (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">หมายเหตุ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ผู้บันทึก/แก้ไข (อีเมล)</th>
+                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
                             </tr>
                         </thead>
-                        <tbody id="transaction-table-body" class="bg-white divide-y divide-gray-200">
+                        <tbody id="transaction-table-body" class="bg-white divide-y divide-slate-200">
                             <!-- Transaction rows will be injected here by JavaScript -->
                         </tbody>
                     </table>
                 </div>
             </section>
             
-            <section class="bg-white p-6 rounded-lg shadow-xl mb-8 border border-gray-200">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">ปฏิทินของฉัน</h2>
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">ปฏิทินของฉัน</h2>
                 <div class="flex justify-center">
                     <iframe src="https://calendar.google.com/calendar/embed?src=68b44e6f253c9b89f4215cc51e417104f7cd236496dd26e56d8f2690998b7e04%40group.calendar.google.com&ctz=Asia%2FBangkok" 
-                            style="border: 0" width="800" height="600" frameborder="0" scrolling="no" class="rounded-lg shadow-md">
+                            style="border: 0" width="800" height="600" frameborder="0" scrolling="no" class="rounded-xl shadow-md">
                     </iframe>
                 </div>
             </section>
@@ -1553,15 +1561,15 @@
                 <h3 id="modal-title" class="text-xl font-bold mb-4"></h3>
                 <div id="modal-body" class="mb-4"></div>
                 <div class="flex justify-center space-x-4">
-                    <button id="modal-confirm" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">ยืนยัน</button>
-                    <button id="modal-cancel" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400">ยกเลิก</button>
+                    <button id="modal-confirm" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold">ยืนยัน</button>
+                    <button id="modal-cancel" class="px-4 py-2 bg-slate-300 text-slate-800 rounded-lg hover:bg-slate-400 font-semibold">ยกเลิก</button>
                 </div>
             </div>
         </div>
         <div id="toast-notification" class="toast-notification"></div>
 
     </div>
-    <footer class="text-center p-4 text-gray-600 text-sm mt-8 border-t border-gray-300">
+    <footer class="text-center p-4 text-slate-600 text-sm mt-8 border-t border-slate-300">
         <p>ผู้ดูแล: safaree LBS</p>
         <p>Tel. 097-197-0933</p>
         <p>&copy; 2025 webdelivery</p>
