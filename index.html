@@ -92,8 +92,8 @@
         let allTransactions = []; // Store all transactions here
         let filteredTransactions = []; // Store filtered transactions for display and export
         let allRecipes = [];
-        let rawMaterialCosts = {}; // New object to store raw material costs
-        
+        let allInventory = [];
+
         // Discord Webhook URL (replace with your own)
         const DISCORD_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1417426298954846289/6DOwlCNNYkcZsJILbFhKqAvX21tp_ZulqyJji6ErC5kR24CNWdv4X-_1ktGbMI5V4ZEp";
 
@@ -159,6 +159,9 @@
                 document.getElementById('reset-filters-btn').addEventListener('click', resetFilters);
                 document.getElementById('export-csv-btn').addEventListener('click', () => exportToCSV(filteredTransactions));
                 document.getElementById('export-excel-btn').addEventListener('click', () => exportToExcel(filteredTransactions));
+
+                // Add event listener for dynamic cost calculation
+                document.getElementById('order_list').addEventListener('input', calculateRawMaterialCost);
 
 
             } else {
@@ -231,7 +234,8 @@
                 gp_fee_excl_vat: parseFloat(formData.get('gp_fee_excl_vat')) || 0,
                 shipping_discount_fee_excl_vat: parseFloat(formData.get('shipping_discount_fee_excl_vat')) || 0,
                 vat_amount: parseFloat(formData.get('vat_amount')) || 0,
-                raw_material_cost: parseFloat(formData.get('raw_material_cost')) || 0,
+                // Raw material cost is now from the calculated value
+                raw_material_cost: parseFloat(document.getElementById('raw_material_cost').value) || 0,
                 expense: parseFloat(formData.get('expense')) || 0,
                 note: formData.get('note'),
                 buyer_name: formData.get('buyer_name'),
@@ -245,6 +249,8 @@
                 const transactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
                 await addDoc(transactionsColRef, data);
                 e.target.reset(); // Clear form after successful submission
+                // Recalculate cost after reset
+                document.getElementById('raw_material_cost').value = '0.00';
                 console.log("Transaction added successfully.");
                 showToastNotification("✅ บันทึกรายการสำเร็จ");
                 updateInventoryOnSale(data);
@@ -271,6 +277,7 @@
                 unit: formData.get('inventory-unit'),
                 current_stock: parseFloat(formData.get('inventory-stock')) || 0,
                 low_threshold: parseFloat(formData.get('inventory-threshold')) || 0,
+                cost_per_unit: parseFloat(formData.get('inventory-cost-per-unit')) || 0, // NEW
             };
 
             try {
@@ -279,36 +286,10 @@
                 e.target.reset();
                 console.log("Inventory item added/updated successfully.");
                 showToastNotification("✅ อัปเดตสต็อกสำเร็จ");
-                const inventoryMessage = `📦 **ข้อมูลสต็อกอัปเดต:** ${data.name} มีสต็อกใหม่ ${data.current_stock} ${data.unit}. โดย ${userEmail}`;
+                const inventoryMessage = `📦 **ข้อมูลสต็อกอัปเดต:** ${data.name} มีสต็อกใหม่ ${data.current_stock} ${data.unit} (ต้นทุน: ${data.cost_per_unit} บาท/หน่วย). โดย ${userEmail}`;
                 sendDiscordMessage(inventoryMessage);
             } catch (error) {
                 console.error("Error adding/updating inventory item: ", error);
-            }
-        });
-
-        // Raw material cost management form submission
-        document.getElementById('raw-material-cost-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!db || !userEmail) {
-                console.error("Firebase is not initialized or user is not authenticated.");
-                return;
-            }
-
-            const formData = new FormData(e.target);
-            const data = {
-                name: formData.get('cost-item-name'),
-                cost_per_unit: parseFloat(formData.get('cost-per-unit')) || 0,
-                unit: formData.get('cost-unit'),
-            };
-            
-            try {
-                const costDocRef = doc(db, `artifacts/${appId}/public/data/rawMaterialCosts`, data.name);
-                await setDoc(costDocRef, data);
-                e.target.reset();
-                console.log("Raw material cost added/updated successfully.");
-                showToastNotification("✅ อัปเดตต้นทุนวัตถุดิบสำเร็จ");
-            } catch (error) {
-                console.error("Error adding/updating raw material cost:", error);
             }
         });
 
@@ -366,31 +347,15 @@
             }
             const inventoryColRef = collection(db, `artifacts/${appId}/public/data/inventory`);
             onSnapshot(inventoryColRef, (querySnapshot) => {
-                const inventoryItems = [];
+                allInventory = [];
                 querySnapshot.forEach((doc) => {
-                    inventoryItems.push({ id: doc.id, ...doc.data() });
+                    allInventory.push({ id: doc.id, ...doc.data() });
                 });
-                displayInventory(inventoryItems);
-                checkLowStock(inventoryItems); // Check low stock when inventory changes
+                displayInventory(allInventory);
+                checkLowStock(allInventory); // Check low stock when inventory changes
             });
         }
         
-        // Listen for real-time raw material cost updates
-        function setupRawMaterialCostListeners() {
-            if (!db || !userEmail) return;
-            const costColRef = collection(db, `artifacts/${appId}/public/data/rawMaterialCosts`);
-            onSnapshot(costColRef, (querySnapshot) => {
-                rawMaterialCosts = {};
-                const costs = [];
-                querySnapshot.forEach(doc => {
-                    const costData = { id: doc.id, ...doc.data() };
-                    rawMaterialCosts[doc.id] = costData;
-                    costs.push(costData);
-                });
-                displayRawMaterialCosts(costs);
-            });
-        }
-
         // Check for low stock and send notification
         function checkLowStock(inventoryItems) {
             const lowStockItems = inventoryItems.filter(item => item.current_stock <= item.low_threshold);
@@ -410,7 +375,7 @@
             const tableBody = document.getElementById('inventory-table-body');
             tableBody.innerHTML = '';
             if (items.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลสินค้าคงคลัง</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลสินค้าคงคลัง</td></tr>`;
             }
             items.forEach(item => {
                 const statusColor = item.current_stock <= item.low_threshold ? 'text-rose-600 font-bold' : 'text-emerald-600';
@@ -421,8 +386,9 @@
                     <td class="px-4 py-2 border-b">${item.unit}</td>
                     <td class="px-4 py-2 border-b text-right ${statusColor}">${item.current_stock.toLocaleString()}</td>
                     <td class="px-4 py-2 border-b text-right">${item.low_threshold.toLocaleString()}</td>
+                    <td class="px-4 py-2 border-b text-right">${(item.cost_per_unit || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="px-4 py-2 border-b text-center space-x-2">
-                        <button onclick="window.showEditInventoryModal('${item.id}', '${item.name}', '${item.unit}', ${item.current_stock}, ${item.low_threshold})" class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
+                        <button onclick="window.showEditInventoryModal('${item.id}', '${item.name}', '${item.unit}', ${item.current_stock}, ${item.low_threshold}, ${item.cost_per_unit})" class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
                         <button onclick="window.showDeleteInventoryModal('${item.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
                     </td>
                 `;
@@ -430,28 +396,6 @@
             });
         }
         
-        function displayRawMaterialCosts(costs) {
-            const tableBody = document.getElementById('raw-material-cost-table-body');
-            tableBody.innerHTML = '';
-            if (costs.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลต้นทุนวัตถุดิบ</td></tr>`;
-            }
-            costs.forEach(cost => {
-                const row = document.createElement('tr');
-                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
-                row.innerHTML = `
-                    <td class="px-4 py-2 border-b">${cost.name}</td>
-                    <td class="px-4 py-2 border-b">${cost.unit}</td>
-                    <td class="px-4 py-2 border-b text-right">${(cost.cost_per_unit || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2 border-b text-center space-x-2">
-                        <button onclick="window.showEditRawMaterialCostModal('${cost.id}', '${cost.name}', '${cost.unit}', ${cost.cost_per_unit})" class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
-                        <button onclick="window.showDeleteRawMaterialCostModal('${cost.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
-                    </td>
-                `;
-                tableBody.appendChild(row);
-            });
-        }
-
         // Listen for real-time data updates
         function setupDataListeners() {
             if (!db || !userEmail) {
@@ -1013,7 +957,7 @@
         }
         
         // Modal functions for inventory
-        window.showEditInventoryModal = (id, name, unit, current_stock, low_threshold) => {
+        window.showEditInventoryModal = (id, name, unit, current_stock, low_threshold, cost_per_unit) => {
             modalTitle.textContent = 'แก้ไขรายการสต็อก';
             modalBody.innerHTML = `
                 <div class="space-y-4 text-left">
@@ -1033,6 +977,10 @@
                         <label class="block text-sm font-medium text-gray-700 mb-1">เกณฑ์แจ้งเตือนสต็อกต่ำ</label>
                         <input type="number" id="modal-inventory-threshold" value="${low_threshold}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
                     </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ต้นทุนต่อหน่วย</label>
+                        <input type="number" id="modal-inventory-cost-per-unit" value="${cost_per_unit}" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
                 </div>
             `;
             modalConfirm.onclick = () => {
@@ -1040,7 +988,8 @@
                 const newUnit = document.getElementById('modal-inventory-unit').value;
                 const newStock = parseFloat(document.getElementById('modal-inventory-stock').value);
                 const newThreshold = parseFloat(document.getElementById('modal-inventory-threshold').value);
-                editInventory(id, newName, newUnit, newStock, newThreshold);
+                const newCostPerUnit = parseFloat(document.getElementById('modal-inventory-cost-per-unit').value);
+                editInventory(id, newName, newUnit, newStock, newThreshold, newCostPerUnit);
                 modal.style.display = 'none';
             };
             modalCancel.onclick = () => {
@@ -1056,17 +1005,15 @@
                 deleteInventory(id);
                 modal.style.display = 'none';
             };
-            modalCancel.onclick = () => {
-                modal.style.display = 'none';
-            };
+            modalCancel.onclick = () => { modal.style.display = 'none'; };
             modal.style.display = 'flex';
         };
 
-        async function editInventory(id, name, unit, current_stock, low_threshold) {
+        async function editInventory(id, name, unit, current_stock, low_threshold, cost_per_unit) {
             if (!db || !userEmail) return;
             try {
                 const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, id);
-                await updateDoc(inventoryRef, { name, unit, current_stock, low_threshold });
+                await updateDoc(inventoryRef, { name, unit, current_stock, low_threshold, cost_per_unit });
                 console.log("Inventory item updated successfully.");
                 showToastNotification("✅ แก้ไขสต็อกสำเร็จ");
                 const inventoryMessage = `✏️ **รายการสต็อกถูกแก้ไข:** ${name} มีสต็อกใหม่ ${current_stock} ${unit}. โดย ${userEmail}`;
@@ -1090,69 +1037,6 @@
             }
         }
 
-        // Modal functions for raw material costs
-        window.showEditRawMaterialCostModal = (id, name, unit, cost_per_unit) => {
-            modalTitle.textContent = 'แก้ไขต้นทุนวัตถุดิบ';
-            modalBody.innerHTML = `
-                <div class="space-y-4 text-left">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
-                        <input type="text" id="modal-cost-item-name" value="${name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วยนับ</label>
-                        <input type="text" id="modal-cost-unit" value="${unit}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ราคาต่อหน่วย (บาท)</label>
-                        <input type="number" id="modal-cost-per-unit" value="${cost_per_unit}" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                </div>
-            `;
-            modalConfirm.onclick = () => {
-                const newName = document.getElementById('modal-cost-item-name').value;
-                const newUnit = document.getElementById('modal-cost-unit').value;
-                const newCost = parseFloat(document.getElementById('modal-cost-per-unit').value);
-                editRawMaterialCost(id, newName, newUnit, newCost);
-                modal.style.display = 'none';
-            };
-            modalCancel.onclick = () => { modal.style.display = 'none'; };
-            modal.style.display = 'flex';
-        };
-
-        window.showDeleteRawMaterialCostModal = (id) => {
-            modalTitle.textContent = 'ยืนยันการลบต้นทุนวัตถุดิบ';
-            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบต้นทุนวัตถุดิบนี้?</p>`;
-            modalConfirm.onclick = () => {
-                deleteRawMaterialCost(id);
-                modal.style.display = 'none';
-            };
-            modalCancel.onclick = () => { modal.style.display = 'none'; };
-            modal.style.display = 'flex';
-        };
-
-        async function editRawMaterialCost(id, name, unit, cost_per_unit) {
-            if (!db || !userEmail) return;
-            try {
-                const costRef = doc(db, `artifacts/${appId}/public/data/rawMaterialCosts`, id);
-                await updateDoc(costRef, { name, unit, cost_per_unit });
-                showToastNotification("✅ แก้ไขต้นทุนวัตถุดิบสำเร็จ");
-            } catch (error) {
-                console.error("Error updating raw material cost:", error);
-            }
-        }
-        
-        async function deleteRawMaterialCost(id) {
-            if (!db || !userEmail) return;
-            try {
-                const costRef = doc(db, `artifacts/${appId}/public/data/rawMaterialCosts`, id);
-                await deleteDoc(costRef);
-                showToastNotification("🗑️ ลบต้นทุนวัตถุดิบสำเร็จ");
-            } catch (error) {
-                console.error("Error deleting raw material cost:", error);
-            }
-        }
-
         // Close modal when clicking outside
         window.onclick = function(event) {
             if (event.target == modal) {
@@ -1160,7 +1044,7 @@
             }
         };
 
-        // --- NEW RECIPE MANAGEMENT FUNCTIONS ---
+        // --- RECIPE & COST CALCULATION FUNCTIONS ---
         let rawMaterialCount = 1;
 
         window.addRawMaterialField = () => {
@@ -1244,26 +1128,37 @@
                 displayRecipes(allRecipes);
             });
         }
-
-         // Function to calculate raw material cost when a menu item is selected
+        
         function calculateRawMaterialCost() {
-            const selectedMenu = document.getElementById('order-list-select').value;
+            const orderListString = document.getElementById('order_list').value.toLowerCase();
             const rawMaterialCostInput = document.getElementById('raw_material_cost');
             let totalCost = 0;
 
-            if (selectedMenu) {
-                const recipe = allRecipes.find(r => r.finished_product === selectedMenu);
-                if (recipe) {
-                    recipe.raw_materials.forEach(material => {
-                        const costPerUnit = rawMaterialCosts[material.name]?.cost_per_unit || 0;
-                        totalCost += costPerUnit * (material.quantity || 0);
+            if (!orderListString || !allRecipes || !allInventory) {
+                rawMaterialCostInput.value = '0.00';
+                return;
+            }
+            
+            // This is a simple parsing logic, it assumes each line is one item.
+            const orderListItems = orderListString.split('\n').map(item => item.trim()).filter(item => item.length > 0);
+            
+            orderListItems.forEach(item => {
+                const foundRecipe = allRecipes.find(recipe => item.includes(recipe.finished_product.toLowerCase()));
+                if (foundRecipe) {
+                    foundRecipe.raw_materials.forEach(rawMaterial => {
+                        const inventoryItem = allInventory.find(inv => inv.name.toLowerCase() === rawMaterial.name.toLowerCase());
+                        if (inventoryItem) {
+                            totalCost += (rawMaterial.quantity || 0) * (inventoryItem.cost_per_unit || 0);
+                        } else {
+                            console.warn(`วัตถุดิบ "${rawMaterial.name}" ไม่พบในสต็อก`);
+                        }
                     });
                 }
-            }
+            });
 
             rawMaterialCostInput.value = totalCost.toFixed(2);
         }
-        
+
         function displayRecipes(recipes) {
             const tableBody = document.getElementById('recipe-table-body');
             tableBody.innerHTML = '';
@@ -1525,7 +1420,7 @@
                     </div>
                     <div class="md:col-span-3">
                         <label for="order_list" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ</label>
-                        <textarea id="order_list" name="order_list" rows="3" placeholder="เช่น ก๋วยเตี๋ยว, ข้าวไข่เจียว"
+                        <textarea id="order_list" name="order_list" rows="3" placeholder="พิมพ์ชื่อเมนูแต่ละรายการ (บรรทัดละเมนู)&#10;ระบบจะคำนวณค่าวัตถุดิบอัตโนมัติ"
                             class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></textarea>
                     </div>
                     <div>
@@ -1549,9 +1444,9 @@
                             class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div>
-                        <label for="raw_material_cost" class="block text-sm font-semibold text-slate-700 mb-1">ค่าวัตถุดิบ</label>
-                        <input type="number" id="raw_material_cost" name="raw_material_cost" step="0.01" value="0.00"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                        <label for="raw_material_cost" class="block text-sm font-semibold text-slate-700 mb-1">ค่าวัตถุดิบ (คำนวณอัตโนมัติ)</label>
+                        <input type="number" id="raw_material_cost" name="raw_material_cost" step="0.01" value="0.00" readonly disabled
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-200 shadow-sm">
                     </div>
                     <div>
                         <label for="expense" class="block text-sm font-semibold text-slate-700 mb-1">ค่าใช้จ่ายอื่นๆ</label>
@@ -1572,9 +1467,9 @@
                 </form>
             </section>
             
-             <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">จัดการสินค้าคงคลัง</h2>
-                <form id="inventory-form" class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <form id="inventory-form" class="grid grid-cols-1 md:grid-cols-5 gap-6">
                     <div>
                         <label for="inventory-name" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อวัตถุดิบ</label>
                         <input type="text" id="inventory-name" name="inventory-name" required placeholder="เช่น ไข่ไก่, เส้นก๋วยเตี๋ยว"
@@ -1595,7 +1490,12 @@
                         <input type="number" id="inventory-threshold" name="inventory-threshold" step="1" required value="0"
                             class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
-                    <div class="md:col-span-4 text-right">
+                    <div>
+                        <label for="inventory-cost-per-unit" class="block text-sm font-semibold text-slate-700 mb-1">ต้นทุนต่อหน่วย (บาท)</label>
+                        <input type="number" id="inventory-cost-per-unit" name="inventory-cost-per-unit" step="0.01" required value="0.00"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div class="md:col-span-5 text-right">
                         <button type="submit" class="mt-4 px-8 py-3 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transform transition-transform duration-200 hover:scale-105">
                             เพิ่ม/อัปเดตสต็อก
                         </button>
@@ -1609,49 +1509,12 @@
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">หน่วยนับ</th>
                                 <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">สต็อกปัจจุบัน</th>
                                 <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">เกณฑ์ต่ำสุด</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ต้นทุนต่อหน่วย</th>
                                 <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
                             </tr>
                         </thead>
                         <tbody id="inventory-table-body" class="bg-white divide-y divide-slate-200">
                             <!-- Inventory rows will be injected here by JavaScript -->
-                        </tbody>
-                    </table>
-                </div>
-                <h3 class="text-xl font-bold text-slate-800 mt-8 mb-4">จัดการต้นทุนวัตถุดิบ</h3>
-                <form id="raw-material-cost-form" class="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div>
-                        <label for="cost-item-name" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อวัตถุดิบ</label>
-                        <input type="text" id="cost-item-name" name="cost-item-name" required placeholder="เช่น ไข่ไก่"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
-                    </div>
-                    <div>
-                        <label for="cost-unit" class="block text-sm font-semibold text-slate-700 mb-1">หน่วยนับ</label>
-                        <input type="text" id="cost-unit" name="cost-unit" required placeholder="เช่น ฟอง, กิโลกรัม"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
-                    </div>
-                    <div>
-                        <label for="cost-per-unit" class="block text-sm font-semibold text-slate-700 mb-1">ราคาต่อหน่วย (บาท)</label>
-                        <input type="number" id="cost-per-unit" name="cost-per-unit" step="0.01" required value="0.00"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
-                    </div>
-                    <div class="md:col-span-1 text-right self-end">
-                        <button type="submit" class="w-full px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transform transition-transform duration-200 hover:scale-105">
-                            บันทึกต้นทุน
-                        </button>
-                    </div>
-                </form>
-                <div class="overflow-x-auto mt-8 rounded-xl shadow-sm border border-slate-200">
-                    <table class="min-w-full divide-y divide-slate-200">
-                        <thead class="bg-slate-50">
-                            <tr>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ชื่อวัตถุดิบ</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">หน่วยนับ</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ราคาต่อหน่วย (บาท)</th>
-                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
-                            </tr>
-                        </thead>
-                        <tbody id="raw-material-cost-table-body" class="bg-white divide-y divide-slate-200">
-                            <!-- Raw material cost rows will be injected here by JavaScript -->
                         </tbody>
                     </table>
                 </div>
@@ -1802,4 +1665,3 @@
 </body>
 
 </html>
-
