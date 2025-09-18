@@ -63,6 +63,1372 @@
             opacity: 1;
         }
     </style>
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, query, where, getDocs, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDN2AeIQDd4lOgFj3uW1DSSJHybfw0sl78",
+            authDomain: "my-delivery-app-89237.firebaseapp.com",
+            projectId: "my-delivery-app-89237",
+            storageBucket: "my-delivery-app-89237.firebasestorage.app",
+            messagingSenderId: "57996698405",
+            appId: "1:57996698405:web:5f7efa6c439d24f0abf0cc",
+            measurementId: "G-FM7S14RX3R"
+        };
+        const appId = "my-delivery-app-89237";
+        
+        // Initialize Firebase
+        let app = null;
+        let auth = null;
+        let db = null;
+        let userEmail = null; // Changed from userId
+        let myChart = null;
+        let myExpenseChart = null; // New chart instance for expenses
+        let allTransactions = []; // Store all transactions here
+        let filteredTransactions = []; // Store filtered transactions for display and export
+        let allRecipes = [];
+        let allInventory = {}; // New object to store inventory data for quick lookup
+        let rawMaterialCosts = {}; // New object to store raw material costs
+
+        // Discord Webhook URL (replace with your own)
+        const DISCORD_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1417426298954846289/6DOwlCNNYkcZsJILbFhKqAvX21tp_ZulqyJji6ErC5kR24CNWdv4X-_1ktGbMI5V4ZEp";
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (Object.keys(firebaseConfig).length > 0) {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                setLogLevel('Debug');
+                console.log("Firebase initialized.");
+
+                onAuthStateChanged(auth, (user) => {
+                    const loadingState = document.getElementById('loading-state');
+                    const mainContent = document.getElementById('main-content');
+                    const loginContent = document.getElementById('login-content');
+                    const logoutBtn = document.getElementById('logout-btn');
+                    const userIdDisplay = document.getElementById('user-id');
+
+                    if (user) {
+                        userEmail = user.email; // Get user email
+                        userIdDisplay.textContent = userEmail;
+                        console.log("User authenticated:", userEmail);
+                        loadingState.classList.add('hidden');
+                        loginContent.classList.add('hidden');
+                        mainContent.classList.remove('hidden');
+                        logoutBtn.classList.remove('hidden');
+                        setupDataListeners();
+                        setupInventoryListeners();
+                        setupRecipeListeners();
+                        setupRawMaterialCostListeners();
+                        populateMonthYearSelects();
+                    } else {
+                        console.log("No user signed in.");
+                        loadingState.classList.add('hidden');
+                        loginContent.classList.remove('hidden');
+                        mainContent.classList.add('hidden');
+                        logoutBtn.classList.add('hidden');
+                    }
+                });
+
+                // Login with Google
+                document.getElementById('login-btn').addEventListener('click', async () => {
+                    const provider = new GoogleAuthProvider();
+                    try {
+                        await signInWithPopup(auth, provider);
+                    } catch (error) {
+                        console.error("Error signing in with Google:", error);
+                    }
+                });
+                
+                document.getElementById('logout-btn').addEventListener('click', async () => {
+                    try {
+                        await signOut(auth);
+                    } catch (error) {
+                        console.error("Error signing out:", error);
+                    }
+                });
+
+                // Set up event listeners for filters
+                document.getElementById('search-query').addEventListener('input', applyFilters);
+                document.getElementById('filter-channel').addEventListener('change', applyFilters);
+                document.getElementById('filter-start-date').addEventListener('change', applyFilters);
+                document.getElementById('filter-end-date').addEventListener('change', applyFilters);
+                document.getElementById('reset-filters-btn').addEventListener('click', resetFilters);
+                document.getElementById('export-csv-btn').addEventListener('click', () => exportToCSV(filteredTransactions));
+                document.getElementById('export-excel-btn').addEventListener('click', () => exportToExcel(filteredTransactions));
+                
+                // Add event listener for the new menu select field
+                document.getElementById('order-list-select').addEventListener('change', calculateRawMaterialCost);
+
+
+            } else {
+                console.error("Firebase config is missing. The app cannot function without it.");
+                document.getElementById('loading-state').innerHTML = `<p class="text-red-500 font-bold">Error: Firebase configuration is missing.</p>`;
+                document.getElementById('loading-state').classList.remove('hidden');
+            }
+        });
+
+        function showToastNotification(message, isSuccess = true) {
+            const toast = document.getElementById('toast-notification');
+            toast.textContent = message;
+            toast.classList.remove('bg-red-500', 'bg-green-500');
+            toast.classList.add(isSuccess ? 'bg-green-500' : 'bg-red-500');
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+        
+        // A single function to send messages to Discord
+        async function sendDiscordMessage(message, embed = null) {
+            if (DISCORD_WEBHOOK_URL === "https://discord.com/api/webhooks/1234567890/abcdefghijklmnopqrstuvwxyz") {
+                console.warn("Discord Webhook URL not set. Skipping notification.");
+                return;
+            }
+
+            const payload = {
+                content: message,
+                username: "Accounting Bot",
+                avatar_url: "https://placehold.co/60x60/34D399/FFFFFF?text=🤖"
+            };
+
+            if (embed) {
+                payload.embeds = [embed];
+            }
+
+            try {
+                const response = await fetch(DISCORD_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (response.ok) {
+                    console.log("Discord notification sent successfully.");
+                } else {
+                    console.error("Failed to send Discord notification:", response.status, response.statusText);
+                }
+            } catch (error) {
+                console.error("Error sending Discord notification:", error);
+            }
+        }
+
+        // Event listener for form submission
+        document.getElementById('transaction-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!db || !userEmail) {
+                console.error("Firebase is not initialized or user is not authenticated.");
+                return;
+            }
+
+            const formData = new FormData(e.target);
+            const data = {
+                timestamp: new Date(),
+                date: formData.get('date'),
+                item: formData.get('item'),
+                order_list: formData.get('order_list_select'), // Use the value from the new select field
+                channel: formData.get('channel'),
+                income: parseFloat(formData.get('income')) || 0,
+                gp_fee_excl_vat: parseFloat(formData.get('gp_fee_excl_vat')) || 0,
+                shipping_discount_fee_excl_vat: parseFloat(formData.get('shipping_discount_fee_excl_vat')) || 0,
+                vat_amount: parseFloat(formData.get('vat_amount')) || 0,
+                raw_material_cost: parseFloat(formData.get('raw_material_cost')) || 0,
+                expense: parseFloat(formData.get('expense')) || 0,
+                note: formData.get('note'),
+                buyer_name: formData.get('buyer_name'),
+                order_id: formData.get('order_id'),
+                order_number: formData.get('order_number'),
+                driver_name: formData.get('driver_name'),
+                recordedByUserEmail: userEmail // Add the user email
+            };
+
+            try {
+                const transactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
+                await addDoc(transactionsColRef, data);
+                e.target.reset(); // Clear form after successful submission
+                console.log("Transaction added successfully.");
+                showToastNotification("✅ บันทึกรายการสำเร็จ");
+                updateInventoryOnSale(data);
+                
+                const transactionMessage = `✅ **รายการใหม่ถูกบันทึก:** รายรับ ${data.income.toLocaleString()} บาท จาก ${data.channel}. โดย ${userEmail}`;
+                sendDiscordMessage(transactionMessage);
+
+            } catch (error) {
+                console.error("Error adding document: ", error);
+            }
+        });
+
+        // Inventory management form submission
+        document.getElementById('inventory-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!db || !userEmail) {
+                console.error("Firebase is not initialized or user is not authenticated.");
+                return;
+            }
+            
+            const formData = new FormData(e.target);
+            const data = {
+                name: formData.get('inventory-name'),
+                unit: formData.get('inventory-unit'),
+                current_stock: parseFloat(formData.get('inventory-stock')) || 0,
+                low_threshold: parseFloat(formData.get('inventory-threshold')) || 0,
+            };
+
+            try {
+                const inventoryDocRef = doc(db, `artifacts/${appId}/public/data/inventory`, data.name);
+                await setDoc(inventoryDocRef, data);
+                e.target.reset();
+                console.log("Inventory item added/updated successfully.");
+                showToastNotification("✅ อัปเดตสต็อกสำเร็จ");
+                const inventoryMessage = `📦 **ข้อมูลสต็อกอัปเดต:** ${data.name} มีสต็อกใหม่ ${data.current_stock} ${data.unit}. โดย ${userEmail}`;
+                sendDiscordMessage(inventoryMessage);
+            } catch (error) {
+                console.error("Error adding/updating inventory item: ", error);
+            }
+        });
+
+        // Raw material cost management form submission
+        document.getElementById('raw-material-cost-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!db || !userEmail) {
+                console.error("Firebase is not initialized or user is not authenticated.");
+                return;
+            }
+
+            const formData = new FormData(e.target);
+            const data = {
+                name: formData.get('cost-item-name'),
+                cost_per_unit: parseFloat(formData.get('cost-per-unit')) || 0,
+                unit: formData.get('cost-unit'),
+            };
+            
+            try {
+                const costDocRef = doc(db, `artifacts/${appId}/public/data/rawMaterialCosts`, data.name);
+                await setDoc(costDocRef, data);
+                e.target.reset();
+                console.log("Raw material cost added/updated successfully.");
+                showToastNotification("✅ อัปเดตต้นทุนวัตถุดิบสำเร็จ");
+            } catch (error) {
+                console.error("Error adding/updating raw material cost:", error);
+            }
+        });
+
+        // Update inventory after a sale (Deduct raw materials)
+        async function updateInventoryOnSale(transactionData) {
+            if (!db || !userEmail || allRecipes.length === 0) {
+                console.log("Recipes not loaded or user not authenticated. Skipping inventory deduction.");
+                return;
+            }
+            
+            const orderList = transactionData.order_list.toLowerCase();
+            const inventoryColRef = collection(db, `artifacts/${appId}/public/data/inventory`);
+            
+            allRecipes.forEach(async (recipe) => {
+                // Check if the finished product is in the order list
+                if (orderList.includes(recipe.finished_product.toLowerCase())) {
+                    console.log(`Matching recipe found for: ${recipe.finished_product}`);
+                    const inventorySnapshot = await getDocs(inventoryColRef);
+                    const inventoryItems = {};
+                    inventorySnapshot.forEach(doc => {
+                        inventoryItems[doc.data().name.toLowerCase()] = { id: doc.id, ...doc.data() };
+                    });
+
+                    // Deduct each raw material from the recipe
+                    recipe.raw_materials.forEach(async (rawMaterial) => {
+                        const materialNameLower = rawMaterial.name.toLowerCase();
+                        if (inventoryItems[materialNameLower]) {
+                            const currentStock = inventoryItems[materialNameLower].current_stock || 0;
+                            const newStock = currentStock - (rawMaterial.quantity || 0);
+                            
+                            const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, inventoryItems[materialNameLower].id);
+                            await updateDoc(inventoryRef, { current_stock: newStock });
+                            console.log(`Deducted ${rawMaterial.quantity} ${rawMaterial.unit} of ${rawMaterial.name}. New stock: ${newStock}`);
+                        } else {
+                            console.warn(`Raw material "${rawMaterial.name}" not found in inventory.`);
+                        }
+                    });
+                }
+            });
+
+            // Re-check low stock after every sale
+            const inventorySnapshot = await getDocs(inventoryColRef);
+            const updatedItems = [];
+            inventorySnapshot.forEach(doc => {
+                updatedItems.push({ id: doc.id, ...doc.data() });
+            });
+            checkLowStock(updatedItems);
+        }
+        
+        // Listen for real-time inventory updates
+        function setupInventoryListeners() {
+            if (!db || !userEmail) {
+                console.error("Firebase is not initialized or user is not authenticated.");
+                return;
+            }
+            const inventoryColRef = collection(db, `artifacts/${appId}/public/data/inventory`);
+            onSnapshot(inventoryColRef, (querySnapshot) => {
+                const inventoryItems = [];
+                querySnapshot.forEach((doc) => {
+                    const itemData = { id: doc.id, ...doc.data() };
+                    inventoryItems.push(itemData);
+                    allInventory[doc.id] = itemData; // Store for quick lookup
+                });
+                displayInventory(inventoryItems);
+                checkLowStock(inventoryItems); // Check low stock when inventory changes
+            });
+        }
+
+        // Listen for real-time raw material cost updates
+        function setupRawMaterialCostListeners() {
+            if (!db || !userEmail) return;
+            const costColRef = collection(db, `artifacts/${appId}/public/data/rawMaterialCosts`);
+            onSnapshot(costColRef, (querySnapshot) => {
+                rawMaterialCosts = {};
+                const costs = [];
+                querySnapshot.forEach(doc => {
+                    const costData = { id: doc.id, ...doc.data() };
+                    rawMaterialCosts[doc.id] = costData;
+                    costs.push(costData);
+                });
+                displayRawMaterialCosts(costs);
+            });
+        }
+        
+        // Check for low stock and send notification
+        function checkLowStock(inventoryItems) {
+            const lowStockItems = inventoryItems.filter(item => item.current_stock <= item.low_threshold);
+            const lowStockAlert = document.getElementById('low-stock-alert');
+            
+            if (lowStockItems.length > 0) {
+                const messages = lowStockItems.map(item => `⚠️ **${item.name}** สต็อกใกล้หมดแล้ว! มีเพียง ${item.current_stock} ${item.unit} (ต่ำกว่าเกณฑ์ ${item.low_threshold} ${item.unit})`);
+                lowStockAlert.innerHTML = messages.join('<br>');
+                lowStockAlert.classList.remove('hidden');
+                sendDiscordMessage(messages.join('\n'));
+            } else {
+                lowStockAlert.classList.add('hidden');
+            }
+        }
+
+        function displayInventory(items) {
+            const tableBody = document.getElementById('inventory-table-body');
+            tableBody.innerHTML = '';
+            if (items.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลสินค้าคงคลัง</td></tr>`;
+            }
+            items.forEach(item => {
+                const statusColor = item.current_stock <= item.low_threshold ? 'text-rose-600 font-bold' : 'text-emerald-600';
+                const row = document.createElement('tr');
+                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
+                row.innerHTML = `
+                    <td class="px-4 py-2 border-b">${item.name}</td>
+                    <td class="px-4 py-2 border-b">${item.unit}</td>
+                    <td class="px-4 py-2 border-b text-right ${statusColor}">${item.current_stock.toLocaleString()}</td>
+                    <td class="px-4 py-2 border-b text-right">${item.low_threshold.toLocaleString()}</td>
+                    <td class="px-4 py-2 border-b text-center space-x-2">
+                        <button onclick="window.showEditInventoryModal('${item.id}', '${item.name}', '${item.unit}', ${item.current_stock}, ${item.low_threshold})" class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
+                        <button onclick="window.showDeleteInventoryModal('${item.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        function displayRawMaterialCosts(costs) {
+            const tableBody = document.getElementById('raw-material-cost-table-body');
+            tableBody.innerHTML = '';
+            if (costs.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลต้นทุนวัตถุดิบ</td></tr>`;
+            }
+            costs.forEach(cost => {
+                const row = document.createElement('tr');
+                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
+                row.innerHTML = `
+                    <td class="px-4 py-2 border-b">${cost.name}</td>
+                    <td class="px-4 py-2 border-b">${cost.unit}</td>
+                    <td class="px-4 py-2 border-b text-right">${(cost.cost_per_unit || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-center space-x-2">
+                        <button onclick="window.showEditRawMaterialCostModal('${cost.id}', '${cost.name}', '${cost.unit}', ${cost.cost_per_unit})" class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
+                        <button onclick="window.showDeleteRawMaterialCostModal('${cost.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+        
+        // Listen for real-time data updates
+        function setupDataListeners() {
+            if (!db || !userEmail) {
+                console.error("Firebase is not initialized or user is not authenticated.");
+                return;
+            }
+
+            const transactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
+            const q = query(transactionsColRef);
+
+            onSnapshot(q, (querySnapshot) => {
+                allTransactions = [];
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    allTransactions.push({ id: doc.id, ...data, timestamp: data.timestamp ? data.timestamp.toDate() : new Date() });
+                });
+
+                // Sort transactions by date and timestamp in memory
+                allTransactions.sort((a, b) => {
+                    const dateA = new Date(a.date);
+                    const dateB = new Date(b.date);
+                    if (dateA - dateB !== 0) {
+                        return dateA - dateB;
+                    }
+                    return a.timestamp - b.timestamp;
+                });
+                
+                applyFilters();
+            }, (error) => {
+                console.error("Error listening to transactions:", error);
+            });
+        }
+        
+        // Apply filters to transactions
+        function applyFilters() {
+            const searchQuery = document.getElementById('search-query').value.toLowerCase();
+            const filterChannel = document.getElementById('filter-channel').value;
+            const startDate = document.getElementById('filter-start-date').value;
+            const endDate = document.getElementById('filter-end-date').value;
+            
+            filteredTransactions = allTransactions.filter(transaction => {
+                const searchMatch = !searchQuery || (
+                    (transaction.order_number && transaction.order_number.toLowerCase().includes(searchQuery)) ||
+                    (transaction.buyer_name && transaction.buyer_name.toLowerCase().includes(searchQuery)) ||
+                    (transaction.item && transaction.item.toLowerCase().includes(searchQuery)) ||
+                    (transaction.order_list && transaction.order_list.toLowerCase().includes(searchQuery)) ||
+                    (transaction.note && transaction.note.toLowerCase().includes(searchQuery))
+                );
+
+                const channelMatch = !filterChannel || transaction.channel === filterChannel;
+
+                const dateMatch = (!startDate || new Date(transaction.date) >= new Date(startDate)) &&
+                                 (!endDate || new Date(transaction.date) <= new Date(endDate + 'T23:59:59'));
+                
+                return searchMatch && channelMatch && dateMatch;
+            });
+            
+            displayTransactions(filteredTransactions);
+            updateMonthlySummary(filteredTransactions);
+            updateChart(filteredTransactions);
+            updateExpenseChart(filteredTransactions);
+        }
+
+        // Reset all filters
+        function resetFilters() {
+            document.getElementById('search-query').value = '';
+            document.getElementById('filter-channel').value = '';
+            document.getElementById('filter-start-date').value = '';
+            document.getElementById('filter-end-date').value = '';
+            applyFilters();
+        }
+
+        // Export data to CSV
+        function exportToCSV(data) {
+            if (data.length === 0) {
+                console.warn("No data to export.");
+                return;
+            }
+
+            const header = [
+                "วัน/เวลา", "ช่องทาง", "เลขออเดอร์", "ชื่อผู้ซื้อ", "คนขับ", "รายการ", "รายการสั่งซื้อ", 
+                "รายรับ (บาท)", "ค่า GP (ไม่รวม VAT)", "ค่าส่วนลด (ไม่รวม VAT)", "ค่า VAT", 
+                "ค่าวัตถุดิบ (บาท)", "ค่าใช้จ่ายอื่นๆ (บาท)", "กำไร (บาท)", "หมายเหตุ", "ผู้บันทึก/แก้ไข (อีเมล)"
+            ].join(',');
+            
+            const csvRows = data.map(transaction => {
+                const profit = (transaction.income || 0) - ((transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0));
+                
+                const escapeCSV = (value) => {
+                    if (value === null || value === undefined) return '';
+                    let str = String(value);
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                        return `"${str.replace(/"/g, '""')}"`;
+                    }
+                    return str;
+                };
+
+                return [
+                    escapeCSV(transaction.date.split('T')[0]),
+                    escapeCSV(transaction.channel || ''),
+                    escapeCSV(transaction.order_number || ''),
+                    escapeCSV(transaction.buyer_name || ''),
+                    escapeCSV(transaction.driver_name || ''),
+                    escapeCSV(transaction.item || ''),
+                    escapeCSV(transaction.order_list || ''),
+                    escapeCSV(transaction.income || 0),
+                    escapeCSV(transaction.gp_fee_excl_vat || 0),
+                    escapeCSV(transaction.shipping_discount_fee_excl_vat || 0),
+                    escapeCSV(transaction.vat_amount || 0),
+                    escapeCSV(transaction.raw_material_cost || 0),
+                    escapeCSV(transaction.expense || 0),
+                    escapeCSV(profit),
+                    escapeCSV(transaction.note || ''),
+                    escapeCSV(transaction.recordedByUserEmail || '')
+                ].join(',');
+            });
+            const BOM = "\uFEFF"; // Byte Order Mark
+            const csvString = [BOM + header, ...csvRows].join('\n');
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'delivery_transactions.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            console.log("Exported to CSV successfully.");
+        }
+
+        // Export data to Excel
+        function exportToExcel(data) {
+            if (data.length === 0) {
+                console.warn("No data to export.");
+                return;
+            }
+
+            const header = [
+                "วัน/เวลา", "ช่องทาง", "เลขออเดอร์", "ชื่อผู้ซื้อ", "คนขับ", "รายการ", "รายการสั่งซื้อ", 
+                "รายรับ (บาท)", "ค่า GP (ไม่รวม VAT)", "ค่าส่วนลด (ไม่รวม VAT)", "ค่า VAT", 
+                "ค่าวัตถุดิบ (บาท)", "ค่าใช้จ่ายอื่นๆ (บาท)", "กำไร (บาท)", "หมายเหตุ", "ผู้บันทึก/แก้ไข (อีเมล)"
+            ];
+
+            const excelRows = data.map(transaction => {
+                const profit = (transaction.income || 0) - ((transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0));
+                
+                return [
+                    transaction.date.split('T')[0],
+                    transaction.channel || '',
+                    transaction.order_number || '',
+                    transaction.buyer_name || '',
+                    transaction.driver_name || '',
+                    transaction.item || '',
+                    transaction.order_list || '',
+                    (transaction.income || 0),
+                    (transaction.gp_fee_excl_vat || 0),
+                    (transaction.shipping_discount_fee_excl_vat || 0),
+                    (transaction.vat_amount || 0),
+                    (transaction.raw_material_cost || 0),
+                    (transaction.expense || 0),
+                    profit,
+                    transaction.note || '',
+                    transaction.recordedByUserEmail || ''
+                ];
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet([header, ...excelRows]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Transactions");
+            XLSX.writeFile(wb, "delivery_transactions.xlsx");
+            console.log("Exported to Excel successfully.");
+        }
+
+        // Populate month and year dropdowns
+        function populateMonthYearSelects() {
+            const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            const monthSelect = document.getElementById('summary-month');
+            const yearSelect = document.getElementById('summary-year');
+            const currentYear = new Date().getFullYear();
+            const currentMonth = new Date().getMonth();
+
+            monthSelect.innerHTML = '';
+            yearSelect.innerHTML = '';
+
+            for (let i = 0; i < months.length; i++) {
+                const option = document.createElement('option');
+                option.value = i + 1;
+                option.textContent = months[i];
+                if (i === currentMonth) {
+                    option.selected = true;
+                }
+                monthSelect.appendChild(option);
+            }
+
+            for (let i = currentYear - 5; i <= currentYear; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = i;
+                if (i === currentYear) {
+                    option.selected = true;
+                }
+                yearSelect.appendChild(option);
+            }
+
+            monthSelect.addEventListener('change', () => applyFilters());
+            yearSelect.addEventListener('change', () => applyFilters());
+        }
+        
+        // Update monthly summary
+        function updateMonthlySummary(transactions = []) {
+            const selectedMonth = parseInt(document.getElementById('summary-month').value);
+            const selectedYear = parseInt(document.getElementById('summary-year').value);
+
+            let monthlyIncome = 0;
+            let monthlyExpense = 0;
+
+            transactions.forEach(transaction => {
+                const transactionDate = new Date(transaction.date);
+                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
+
+                if (transactionDate.getMonth() + 1 === selectedMonth && transactionDate.getFullYear() === selectedYear) {
+                    monthlyIncome += (transaction.income || 0);
+                    monthlyExpense += totalTransactionExpense;
+                }
+            });
+
+            document.getElementById('monthly-income').textContent = monthlyIncome.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('monthly-expense').textContent = monthlyExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const monthlyProfit = monthlyIncome - monthlyExpense;
+            document.getElementById('monthly-profit').textContent = monthlyProfit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('monthly-profit').classList.remove('text-emerald-600', 'text-rose-600');
+            document.getElementById('monthly-profit').classList.add(monthlyProfit >= 0 ? 'text-emerald-600' : 'text-rose-600');
+        }
+
+        // Update the income chart
+        function updateChart(transactions = []) {
+            const channelData = transactions.reduce((acc, transaction) => {
+                const channel = transaction.channel || 'ไม่ระบุ';
+                acc[channel] = (acc[channel] || 0) + (transaction.income || 0);
+                return acc;
+            }, {});
+
+            const labels = Object.keys(channelData);
+            const data = Object.values(channelData);
+            const backgroundColors = [
+                'rgb(16, 185, 129)',  // Emerald-500
+                'rgb(99, 102, 241)',  // Indigo-500
+                'rgb(244, 63, 94)',   // Rose-500
+                'rgb(245, 158, 11)',  // Amber-500
+                'rgb(59, 130, 246)'   // Blue-500
+            ];
+
+            const chartData = {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: backgroundColors,
+                    hoverOffset: 4
+                }]
+            };
+
+            if (myChart) {
+                myChart.data = chartData;
+                myChart.update();
+            } else {
+                const ctx = document.getElementById('myChart').getContext('2d');
+                myChart = new Chart(ctx, {
+                    type: 'pie',
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.label || '';
+                                        const value = context.parsed;
+                                        const total = context.dataset.data.reduce((sum, current) => sum + current, 0);
+                                        const percentage = ((value / total) * 100).toFixed(2);
+                                        return `${label}: ${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // New function to update the expense chart
+        function updateExpenseChart(transactions = []) {
+            const expenseData = transactions.reduce((acc, transaction) => {
+                acc['ค่า GP'] = (acc['ค่า GP'] || 0) + (transaction.gp_fee_excl_vat || 0);
+                acc['ค่าส่วนลดค่าส่ง'] = (acc['ค่าส่วนลดค่าส่ง'] || 0) + (transaction.shipping_discount_fee_excl_vat || 0);
+                acc['ค่า VAT'] = (acc['ค่า VAT'] || 0) + (transaction.vat_amount || 0);
+                acc['ค่าวัตถุดิบ'] = (acc['ค่าวัตถุดิบ'] || 0) + (transaction.raw_material_cost || 0);
+                acc['ค่าใช้จ่ายอื่นๆ'] = (acc['ค่าใช้จ่ายอื่นๆ'] || 0) + (transaction.expense || 0);
+                return acc;
+            }, {});
+
+            const labels = Object.keys(expenseData);
+            const data = Object.values(expenseData);
+            const backgroundColors = [
+                'rgb(255, 99, 132)',  // Red
+                'rgb(255, 159, 64)',  // Orange
+                'rgb(255, 205, 86)',  // Yellow
+                'rgb(75, 192, 192)',  // Green
+                'rgb(54, 162, 235)'   // Blue
+            ];
+
+            const chartData = {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: backgroundColors,
+                    hoverOffset: 4
+                }]
+            };
+
+            if (myExpenseChart) {
+                myExpenseChart.data = chartData;
+                myExpenseChart.update();
+            } else {
+                const ctx = document.getElementById('myExpenseChart').getContext('2d');
+                myExpenseChart = new Chart(ctx, {
+                    type: 'pie',
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.label || '';
+                                        const value = context.parsed;
+                                        const total = context.dataset.data.reduce((sum, current) => sum + current, 0);
+                                        const percentage = ((value / total) * 100).toFixed(2);
+                                        return `${label}: ${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Display transactions in the table and update summary
+        function displayTransactions(transactions) {
+            const tableBody = document.getElementById('transaction-table-body');
+            const totalIncomeEl = document.getElementById('total-income');
+            const totalExpenseEl = document.getElementById('total-expense');
+            const totalProfitEl = document.getElementById('total-profit');
+
+            tableBody.innerHTML = '';
+            let totalIncome = 0;
+            let totalExpense = 0;
+
+            if (transactions.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="17" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลการทำธุรกรรม</td></tr>`;
+            }
+
+            transactions.forEach(transaction => {
+                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
+                totalIncome += (transaction.income || 0);
+                totalExpense += totalTransactionExpense;
+
+                const profit = (transaction.income || 0) - totalTransactionExpense;
+                const row = document.createElement('tr');
+                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
+                const transactionData = {
+                    id: transaction.id,
+                    note: transaction.note || '',
+                    buyer_name: transaction.buyer_name || '',
+                    order_id: transaction.order_id || '',
+                    order_number: transaction.order_number || '',
+                    driver_name: transaction.driver_name || '',
+                    income: transaction.income || 0,
+                    gp_fee_excl_vat: transaction.gp_fee_excl_vat || 0,
+                    shipping_discount_fee_excl_vat: transaction.shipping_discount_fee_excl_vat || 0,
+                    expense: transaction.expense || 0,
+                    order_list: transaction.order_list || '',
+                    vat_amount: transaction.vat_amount || 0,
+                    raw_material_cost: transaction.raw_material_cost || 0,
+                    recordedByUserEmail: transaction.recordedByUserEmail || ''
+                };
+                row.innerHTML = `
+                    <td class="px-4 py-2 border-b whitespace-nowrap">${transaction.date.split('T')[0]}</td>
+                    <td class="px-4 py-2 border-b">${transaction.channel || ''}</td>
+                    <td class="px-4 py-2 border-b">${transaction.order_number || ''}</td>
+                    <td class="px-4 py-2 border-b">${transaction.buyer_name || ''}</td>
+                    <td class="px-4 py-2 border-b">${transaction.driver_name || ''}</td>
+                    <td class="px-4 py-2 border-b">${transaction.item || ''}</td>
+                    <td class="px-4 py-2 border-b">${transaction.order_list || ''}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.income || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.gp_fee_excl_vat || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.shipping_discount_fee_excl_vat || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.vat_amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.raw_material_cost || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right">${(transaction.expense || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b text-right ${profit >= 0 ? 'text-teal-600' : 'text-rose-600'}">${profit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-2 border-b">${transaction.note || ''}</td>
+                    <td class="px-4 py-2 border-b text-sm font-mono whitespace-nowrap">${transaction.recordedByUserEmail || ''}</td>
+                    <td class="px-4 py-2 border-b text-center space-x-2 whitespace-nowrap">
+                        <button onclick='window.showEditModal(${JSON.stringify(transactionData)})' class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
+                        <button onclick="window.showDeleteModal('${transaction.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            totalIncomeEl.textContent = totalIncome.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            totalExpenseEl.textContent = totalExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            totalProfitEl.textContent = (totalIncome - totalExpense).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            totalProfitEl.classList.remove('text-teal-600', 'text-rose-600');
+            totalProfitEl.classList.add((totalIncome - totalExpense) >= 0 ? 'text-teal-600' : 'text-rose-600');
+        }
+
+        // Modal Logic
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const modalConfirm = document.getElementById('modal-confirm');
+        const modalCancel = document.getElementById('modal-cancel');
+
+        window.showEditModal = (transactionData) => {
+            modalTitle.textContent = 'แก้ไขรายการ';
+            modalBody.innerHTML = `
+                <div class="space-y-4 text-left">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อผู้ซื้อ</label>
+                        <input type="text" id="modal-buyer-name" value="${transactionData.buyer_name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">รหัสใบสั่งซื้อ</label>
+                        <input type="text" id="modal-order-id" value="${transactionData.order_id}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">เลขออเดอร์</label>
+                        <input type="text" id="modal-order-number" value="${transactionData.order_number}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">คนขับ</label>
+                        <input type="text" id="modal-driver-name" value="${transactionData.driver_name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">รายการสั่งซื้อ</label>
+                        <textarea id="modal-order-list" class="w-full px-3 py-2 border border-gray-300 rounded-md">${transactionData.order_list}</textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">รายรับ</label>
+                        <input type="number" id="modal-income" value="${transactionData.income}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าใช้จ่าย GP (ไม่รวม VAT)</label>
+                        <input type="number" id="modal-gp-fee-excl-vat" value="${transactionData.gp_fee_excl_vat}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าส่วนลดค่าส่ง (ไม่รวม VAT)</label>
+                        <input type="number" id="modal-shipping-discount-fee-excl-vat" value="${transactionData.shipping_discount_fee_excl_vat}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่า VAT</label>
+                        <input type="number" id="modal-vat-amount" value="${transactionData.vat_amount}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าวัตถุดิบ</label>
+                        <input type="number" id="modal-raw-material-cost" value="${transactionData.raw_material_cost}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าใช้จ่ายอื่นๆ</label>
+                        <input type="number" id="modal-expense" value="${transactionData.expense}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">หมายเหตุ</label>
+                        <input type="text" id="modal-note" value="${transactionData.note}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                </div>
+            `;
+            modalConfirm.onclick = () => {
+                const newIncome = parseFloat(document.getElementById('modal-income').value);
+                const newGpFeeExclVat = parseFloat(document.getElementById('modal-gp-fee-excl-vat').value);
+                const newShippingDiscountFeeExclVat = parseFloat(document.getElementById('modal-shipping-discount-fee-excl-vat').value);
+                const newVatAmount = parseFloat(document.getElementById('modal-vat-amount').value);
+                const newRawMaterialCost = parseFloat(document.getElementById('modal-raw-material-cost').value);
+                const newExpense = parseFloat(document.getElementById('modal-expense').value);
+                const newNote = document.getElementById('modal-note').value;
+                const newBuyerName = document.getElementById('modal-buyer-name').value;
+                const newOrderNumber = document.getElementById('modal-order-number').value;
+                const newDriverName = document.getElementById('modal-driver-name').value;
+                const newOrderList = document.getElementById('modal-order-list').value;
+                editTransaction(transactionData.id, newIncome, newGpFeeExclVat, newShippingDiscountFeeExclVat, newVatAmount, newRawMaterialCost, newExpense, newNote, newBuyerName, newOrderNumber, newDriverName, newOrderList);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => {
+                modal.style.display = 'none';
+            };
+            modal.style.display = 'flex';
+        };
+
+        window.showDeleteModal = (id) => {
+            modalTitle.textContent = 'ยืนยันการลบ';
+            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบรายการนี้?</p>`;
+            modalConfirm.onclick = () => {
+                deleteTransaction(id);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => {
+                modal.style.display = 'none';
+            };
+            modal.style.display = 'flex';
+        };
+
+        async function editTransaction(id, newIncome, newGpFeeExclVat, newShippingDiscountFeeExclVat, newVatAmount, newRawMaterialCost, newExpense, newNote, newBuyerName, newOrderNumber, newDriverName, newOrderList) {
+            if (!db || !userEmail) return;
+            try {
+                const transactionRef = doc(db, `artifacts/${appId}/public/data/transactions`, id);
+                await updateDoc(transactionRef, { 
+                    income: newIncome, 
+                    gp_fee_excl_vat: newGpFeeExclVat, 
+                    shipping_discount_fee_excl_vat: newShippingDiscountFeeExclVat, 
+                    vat_amount: newVatAmount,
+                    raw_material_cost: newRawMaterialCost,
+                    expense: newExpense, 
+                    note: newNote,
+                    buyer_name: newBuyerName,
+                    order_number: newOrderNumber,
+                    driver_name: newDriverName,
+                    order_list: newOrderList,
+                    recordedByUserEmail: userEmail // Add the user email
+                });
+                console.log("Transaction updated successfully.");
+                showToastNotification("✅ แก้ไขรายการสำเร็จ");
+                const transactionMessage = `✏️ **รายการถูกแก้ไข:** รายการ ${newOrderNumber} ถูกแก้ไขโดยผู้ใช้. โดย ${userEmail}`;
+                sendDiscordMessage(transactionMessage);
+            } catch (error) {
+                console.error("Error updating document:", error);
+            }
+        }
+
+        async function deleteTransaction(id) {
+            if (!db || !userEmail) return;
+            try {
+                const transactionRef = doc(db, `artifacts/${appId}/public/data/transactions`, id);
+                await deleteDoc(transactionRef);
+                console.log("Transaction deleted successfully.");
+                showToastNotification("🗑️ ลบรายการสำเร็จ");
+                const transactionMessage = `🗑️ **รายการถูกลบ:** รายการ ${id} ถูกลบออกจากระบบ. โดย ${userEmail}`;
+                sendDiscordMessage(transactionMessage);
+            } catch (error) {
+                console.error("Error deleting document:", error);
+            }
+        }
+        
+        // Modal functions for inventory
+        window.showEditInventoryModal = (id, name, unit, current_stock, low_threshold) => {
+            modalTitle.textContent = 'แก้ไขรายการสต็อก';
+            modalBody.innerHTML = `
+                <div class="space-y-4 text-left">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
+                        <input type="text" id="modal-inventory-name" value="${name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วยนับ</label>
+                        <input type="text" id="modal-inventory-unit" value="${unit}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">สต็อกปัจจุบัน</label>
+                        <input type="number" id="modal-inventory-stock" value="${current_stock}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">เกณฑ์แจ้งเตือนสต็อกต่ำ</label>
+                        <input type="number" id="modal-inventory-threshold" value="${low_threshold}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                </div>
+            `;
+            modalConfirm.onclick = () => {
+                const newName = document.getElementById('modal-inventory-name').value;
+                const newUnit = document.getElementById('modal-inventory-unit').value;
+                const newStock = parseFloat(document.getElementById('modal-inventory-stock').value);
+                const newThreshold = parseFloat(document.getElementById('modal-inventory-threshold').value);
+                editInventory(id, newName, newUnit, newStock, newThreshold);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => {
+                modal.style.display = 'none';
+            };
+            modal.style.display = 'flex';
+        };
+
+        window.showDeleteInventoryModal = (id) => {
+            modalTitle.textContent = 'ยืนยันการลบสต็อก';
+            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบรายการสต็อกนี้?</p>`;
+            modalConfirm.onclick = () => {
+                deleteInventory(id);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => {
+                modal.style.display = 'none';
+            };
+            modal.style.display = 'flex';
+        };
+
+        async function editInventory(id, name, unit, current_stock, low_threshold) {
+            if (!db || !userEmail) return;
+            try {
+                const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, id);
+                await updateDoc(inventoryRef, { name, unit, current_stock, low_threshold });
+                console.log("Inventory item updated successfully.");
+                showToastNotification("✅ แก้ไขสต็อกสำเร็จ");
+                const inventoryMessage = `✏️ **รายการสต็อกถูกแก้ไข:** ${name} มีสต็อกใหม่ ${current_stock} ${unit}. โดย ${userEmail}`;
+                sendDiscordMessage(inventoryMessage);
+            } catch (error) {
+                console.error("Error updating inventory document:", error);
+            }
+        }
+        
+        async function deleteInventory(id) {
+            if (!db || !userEmail) return;
+            try {
+                const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, id);
+                await deleteDoc(inventoryRef);
+                console.log("Inventory item deleted successfully.");
+                showToastNotification("🗑️ ลบสต็อกสำเร็จ");
+                const deleteMessage = `🗑️ **รายการสต็อกถูกลบ:** รายการ ${id} ถูกลบออกจากระบบ. โดย ${userEmail}`;
+                sendDiscordMessage(deleteMessage);
+            } catch (error) {
+                console.error("Error deleting inventory document:", error);
+            }
+        }
+        
+        // Modal functions for raw material costs
+        window.showEditRawMaterialCostModal = (id, name, unit, cost_per_unit) => {
+            modalTitle.textContent = 'แก้ไขต้นทุนวัตถุดิบ';
+            modalBody.innerHTML = `
+                <div class="space-y-4 text-left">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
+                        <input type="text" id="modal-cost-item-name" value="${name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วยนับ</label>
+                        <input type="text" id="modal-cost-unit" value="${unit}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ราคาต่อหน่วย (บาท)</label>
+                        <input type="number" id="modal-cost-per-unit" value="${cost_per_unit}" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                </div>
+            `;
+            modalConfirm.onclick = () => {
+                const newName = document.getElementById('modal-cost-item-name').value;
+                const newUnit = document.getElementById('modal-cost-unit').value;
+                const newCost = parseFloat(document.getElementById('modal-cost-per-unit').value);
+                editRawMaterialCost(id, newName, newUnit, newCost);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => { modal.style.display = 'none'; };
+            modal.style.display = 'flex';
+        };
+
+        window.showDeleteRawMaterialCostModal = (id) => {
+            modalTitle.textContent = 'ยืนยันการลบต้นทุนวัตถุดิบ';
+            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบต้นทุนวัตถุดิบนี้?</p>`;
+            modalConfirm.onclick = () => {
+                deleteRawMaterialCost(id);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => { modal.style.display = 'none'; };
+            modal.style.display = 'flex';
+        };
+
+        async function editRawMaterialCost(id, name, unit, cost_per_unit) {
+            if (!db || !userEmail) return;
+            try {
+                const costRef = doc(db, `artifacts/${appId}/public/data/rawMaterialCosts`, id);
+                await updateDoc(costRef, { name, unit, cost_per_unit });
+                showToastNotification("✅ แก้ไขต้นทุนวัตถุดิบสำเร็จ");
+            } catch (error) {
+                console.error("Error updating raw material cost:", error);
+            }
+        }
+        
+        async function deleteRawMaterialCost(id) {
+            if (!db || !userEmail) return;
+            try {
+                const costRef = doc(db, `artifacts/${appId}/public/data/rawMaterialCosts`, id);
+                await deleteDoc(costRef);
+                showToastNotification("🗑️ ลบต้นทุนวัตถุดิบสำเร็จ");
+            } catch (error) {
+                console.error("Error deleting raw material cost:", error);
+            }
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        };
+
+        // --- NEW RECIPE MANAGEMENT FUNCTIONS ---
+        let rawMaterialCount = 1;
+
+        window.addRawMaterialField = () => {
+            rawMaterialCount++;
+            const container = document.getElementById('raw-materials-container');
+            const newField = document.createElement('div');
+            newField.classList.add('flex', 'space-x-2', 'items-end');
+            newField.innerHTML = `
+                <div class="flex-1">
+                    <label for="raw-material-name-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
+                    <input type="text" id="raw-material-name-${rawMaterialCount}" name="raw_material_name" placeholder="เช่น ไข่ไก่" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                </div>
+                <div class="flex-1">
+                    <label for="raw-material-quantity-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
+                    <input type="number" id="raw-material-quantity-${rawMaterialCount}" name="raw_material_quantity" value="1" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                </div>
+                <div class="flex-1">
+                    <label for="raw-material-unit-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
+                    <input type="text" id="raw-material-unit-${rawMaterialCount}" name="raw_material_unit" placeholder="เช่น ฟอง, กรัม" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                </div>
+                <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
+            `;
+            container.appendChild(newField);
+        };
+
+        document.getElementById('add-raw-material-btn').addEventListener('click', () => {
+            window.addRawMaterialField();
+        });
+
+        document.getElementById('recipe-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!db || !userEmail) {
+                console.error("Firebase is not initialized or user is not authenticated.");
+                return;
+            }
+
+            const finishedProduct = document.getElementById('finished-product-name').value;
+            const rawMaterials = [];
+            const rawMaterialNames = document.querySelectorAll('input[name="raw_material_name"]');
+            const rawMaterialQuantities = document.querySelectorAll('input[name="raw_material_quantity"]');
+            const rawMaterialUnits = document.querySelectorAll('input[name="raw_material_unit"]');
+
+            rawMaterialNames.forEach((nameInput, index) => {
+                rawMaterials.push({
+                    name: nameInput.value,
+                    quantity: parseFloat(rawMaterialQuantities[index].value) || 0,
+                    unit: rawMaterialUnits[index].value
+                });
+            });
+
+            const data = {
+                finished_product: finishedProduct,
+                raw_materials: rawMaterials,
+                recordedByUserEmail: userEmail
+            };
+            
+            try {
+                const recipesColRef = collection(db, `artifacts/${appId}/public/data/recipes`);
+                await setDoc(doc(recipesColRef, finishedProduct), data);
+                e.target.reset();
+                document.getElementById('raw-materials-container').innerHTML = `
+                    <div class="flex space-x-2 items-end">
+                        <div class="flex-1">
+                            <label for="raw-material-name-0" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อวัตถุดิบ</label>
+                            <input type="text" id="raw-material-name-0" name="raw_material_name" placeholder="เช่น เส้นก๋วยเตี๋ยว" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                        </div>
+                        <div class="flex-1">
+                            <label for="raw-material-quantity-0" class="block text-sm font-semibold text-slate-700 mb-1">ปริมาณ</label>
+                            <input type="number" id="raw-material-quantity-0" name="raw_material_quantity" value="1" step="0.01" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                        </div>
+                        <div class="flex-1">
+                            <label for="raw-material-unit-0" class="block text-sm font-semibold text-slate-700 mb-1">หน่วย</label>
+                            <input type="text" id="raw-material-unit-0" name="raw_material_unit" placeholder="เช่น กรัม" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                        </div>
+                        <button type="button" onclick="this.parentNode.remove()" class="px-4 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600">ลบ</button>
+                    </div>
+                `;
+                rawMaterialCount = 1;
+                console.log("Recipe saved successfully.");
+                showToastNotification("✅ บันทึกสูตรสำเร็จ");
+                const recipeMessage = `📝 **สูตรใหม่ถูกบันทึก/แก้ไข:** สูตรสำหรับ ${finishedProduct} ถูกอัปเดตโดย ${userEmail}.`;
+                sendDiscordMessage(recipeMessage);
+            } catch (error) {
+                console.error("Error saving recipe:", error);
+            }
+        });
+
+        function setupRecipeListeners() {
+            if (!db || !userEmail) return;
+            const recipesColRef = collection(db, `artifacts/${appId}/public/data/recipes`);
+            onSnapshot(recipesColRef, (querySnapshot) => {
+                allRecipes = [];
+                const orderListSelect = document.getElementById('order-list-select');
+                orderListSelect.innerHTML = `<option value="">เลือกเมนู</option>`; // Reset dropdown
+                querySnapshot.forEach((doc) => {
+                    const recipeData = { id: doc.id, ...doc.data() };
+                    allRecipes.push(recipeData);
+                    // Populate dropdown
+                    const option = document.createElement('option');
+                    option.value = recipeData.finished_product;
+                    option.textContent = recipeData.finished_product;
+                    orderListSelect.appendChild(option);
+                });
+                displayRecipes(allRecipes);
+            });
+        }
+
+        // Function to calculate raw material cost when a menu item is selected
+        function calculateRawMaterialCost() {
+            const selectedMenu = document.getElementById('order-list-select').value;
+            const rawMaterialCostInput = document.getElementById('raw_material_cost');
+            let totalCost = 0;
+
+            if (selectedMenu) {
+                const recipe = allRecipes.find(r => r.finished_product === selectedMenu);
+                if (recipe) {
+                    recipe.raw_materials.forEach(material => {
+                        const costPerUnit = rawMaterialCosts[material.name]?.cost_per_unit || 0;
+                        totalCost += costPerUnit * (material.quantity || 0);
+                    });
+                }
+            }
+
+            rawMaterialCostInput.value = totalCost.toFixed(2);
+        }
+
+        function displayRecipes(recipes) {
+            const tableBody = document.getElementById('recipe-table-body');
+            tableBody.innerHTML = '';
+            if (recipes.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-gray-500">ยังไม่มีสูตรวัตถุดิบ</td></tr>`;
+            }
+            recipes.forEach(recipe => {
+                const row = document.createElement('tr');
+                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
+                const rawMaterialsList = recipe.raw_materials.map(mat => `${mat.name} (${mat.quantity} ${mat.unit})`).join(', ');
+                row.innerHTML = `
+                    <td class="px-4 py-2 border-b font-semibold">${recipe.finished_product}</td>
+                    <td class="px-4 py-2 border-b text-sm">${rawMaterialsList}</td>
+                    <td class="px-4 py-2 border-b text-center space-x-2 whitespace-nowrap">
+                        <button onclick='window.showEditRecipeModal(${JSON.stringify(recipe)})' class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
+                        <button onclick="window.showDeleteRecipeModal('${recipe.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+        
+        window.showEditRecipeModal = (recipeData) => {
+            modalTitle.textContent = 'แก้ไขสูตรวัตถุดิบ';
+            let rawMaterialHtml = recipeData.raw_materials.map((mat, index) => `
+                <div class="flex space-x-2 items-end">
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
+                        <input type="text" id="modal-raw-material-name-${index}" value="${mat.name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
+                        <input type="number" id="modal-raw-material-quantity-${index}" value="${mat.quantity}" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
+                        <input type="text" id="modal-raw-material-unit-${index}" value="${mat.unit}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
+                </div>
+            `).join('');
+
+            modalBody.innerHTML = `
+                <div class="space-y-4 text-left">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อเมนู</label>
+                        <input type="text" id="modal-finished-product-name" value="${recipeData.finished_product}" class="w-full px-3 py-2 border border-gray-300 rounded-md" disabled>
+                    </div>
+                    <div id="modal-raw-materials-container" class="space-y-2">${rawMaterialHtml}</div>
+                    <button type="button" id="modal-add-raw-material-btn" class="mt-2 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">เพิ่มวัตถุดิบ</button>
+                </div>
+            `;
+
+            document.getElementById('modal-add-raw-material-btn').addEventListener('click', () => {
+                const container = document.getElementById('modal-raw-materials-container');
+                const newField = document.createElement('div');
+                newField.classList.add('flex', 'space-x-2', 'items-end');
+                newField.innerHTML = `
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
+                        <input type="text" name="modal-raw-material-name" placeholder="เช่น ไข่ไก่" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
+                        <input type="number" name="modal-raw-material-quantity" value="1" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
+                        <input type="text" name="modal-raw-material-unit" placeholder="เช่น ฟอง, กรัม" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
+                `;
+                container.appendChild(newField);
+            });
+
+            modalConfirm.onclick = () => {
+                const newRawMaterials = [];
+                const names = document.querySelectorAll('#modal-raw-materials-container input[name="modal-raw-material-name"]');
+                const quantities = document.querySelectorAll('#modal-raw-materials-container input[name="modal-raw-material-quantity"]');
+                const units = document.querySelectorAll('#modal-raw-materials-container input[name="modal-raw-material-unit"]');
+                
+                names.forEach((nameInput, index) => {
+                    newRawMaterials.push({
+                        name: nameInput.value,
+                        quantity: parseFloat(quantities[index].value) || 0,
+                        unit: units[index].value
+                    });
+                });
+
+                editRecipe(recipeData.id, newRawMaterials);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => { modal.style.display = 'none'; };
+            modal.style.display = 'flex';
+        };
+
+        window.showDeleteRecipeModal = (id) => {
+            modalTitle.textContent = 'ยืนยันการลบสูตร';
+            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบสูตรนี้?</p>`;
+            modalConfirm.onclick = () => {
+                deleteRecipe(id);
+                modal.style.display = 'none';
+            };
+            modalCancel.onclick = () => { modal.style.display = 'none'; };
+            modal.style.display = 'flex';
+        };
+
+        async function editRecipe(id, newRawMaterials) {
+            if (!db || !userEmail) return;
+            try {
+                const recipeRef = doc(db, `artifacts/${appId}/public/data/recipes`, id);
+                await updateDoc(recipeRef, { raw_materials: newRawMaterials, recordedByUserEmail: userEmail });
+                console.log("Recipe updated successfully.");
+                showToastNotification("✅ แก้ไขสูตรสำเร็จ");
+                const recipeMessage = `✏️ **สูตรถูกแก้ไข:** สูตรสำหรับ ${id} ถูกอัปเดตโดย ${userEmail}.`;
+                sendDiscordMessage(recipeMessage);
+            } catch (error) {
+                console.error("Error updating recipe:", error);
+            }
+        }
+        
+        async function deleteRecipe(id) {
+            if (!db || !userEmail) return;
+            try {
+                const recipeRef = doc(db, `artifacts/${appId}/public/data/recipes`, id);
+                await deleteDoc(recipeRef);
+                console.log("Recipe deleted successfully.");
+                showToastNotification("🗑️ ลบสูตรสำเร็จ");
+                const deleteMessage = `🗑️ **สูตรถูกลบ:** สูตรสำหรับ ${id} ถูกลบออกจากระบบ. โดย ${userEmail}`;
+                sendDiscordMessage(deleteMessage);
+            } catch (error) {
+                console.error("Error deleting recipe:", error);
+            }
+        }
+    </script>
 </head>
 
 <body class="bg-gray-100 font-sans leading-normal tracking-normal bg-slate-50">
@@ -150,6 +1516,67 @@
             </section>
             
             <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">ประวัติการทำธุรกรรม</h2>
+                <div class="flex flex-col md:flex-row gap-4 mb-4 items-end">
+                    <div class="w-full md:w-1/2">
+                        <input type="text" id="search-query" placeholder="ค้นหา: เลขออเดอร์, ชื่อผู้ซื้อ, รายการ"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div class="w-full md:w-1/4">
+                        <select id="filter-channel" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            <option value="">กรองตามช่องทางทั้งหมด</option>
+                            <option value="ShopeeFood">ShopeeFood</option>
+                            <option value="Lineman">Lineman</option>
+                            <option value="อื่นๆ">อื่นๆ</option>
+                        </select>
+                    </div>
+                    <div class="w-full md:w-auto flex-none flex gap-2">
+                        <button id="export-csv-btn" class="w-1/2 md:w-auto px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700">ดาวน์โหลด CSV</button>
+                        <button id="export-excel-btn" class="w-1/2 md:w-auto px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700">ดาวน์โหลด Excel</button>
+                        <button id="reset-filters-btn" class="w-1/2 md:w-auto px-4 py-2 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600">รีเซ็ต</button>
+                    </div>
+                </div>
+                <div class="flex flex-col md:flex-row gap-4 mb-4">
+                    <div class="w-full md:w-1/2 flex items-center gap-2">
+                        <label for="filter-start-date" class="block text-sm font-semibold text-slate-700 whitespace-nowrap">วันที่เริ่มต้น:</label>
+                        <input type="date" id="filter-start-date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div class="w-full md:w-1/2 flex items-center gap-2">
+                        <label for="filter-end-date" class="block text-sm font-semibold text-slate-700 whitespace-nowrap">วันที่สิ้นสุด:</label>
+                        <input type="date" id="filter-end-date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                </div>
+                <div class="overflow-x-auto rounded-xl shadow-sm border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">วัน/เวลา</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ช่องทาง</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">เลขออเดอร์</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ชื่อผู้ซื้อ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">คนขับ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการสั่งซื้อ</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">รายรับ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่า GP (ไม่รวม VAT)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าส่วนลด (ไม่รวม VAT)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่า VAT</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าวัตถุดิบ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าใช้จ่ายอื่นๆ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">กำไร (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">หมายเหตุ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ผู้บันทึก/แก้ไข (อีเมล)</th>
+                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transaction-table-body" class="bg-white divide-y divide-slate-200">
+                            <!-- Transaction rows will be injected here by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">เพิ่มรายการใหม่</h2>
                 <form id="transaction-form" class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
@@ -188,12 +1615,46 @@
                             class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
                     <div class="md:col-span-3">
-                        <label for="order-list-select-multiple" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ (เลือกได้หลายเมนู)</label>
-                        <select id="order-list-select-multiple" name="order_list_select" multiple size="5"
+                        <label for="order-list-select" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ (เลือกเมนู)</label>
+                        <select id="order-list-select" name="order_list_select"
                             class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
-                            <!-- Options will be populated by JavaScript -->
+                            <option value="">เลือกเมนู</option>
                         </select>
-                        <p class="text-xs text-slate-500 mt-1">ใช้ปุ่ม Ctrl/Cmd + คลิก เพื่อเลือกหลายรายการ</p>
+                    </div>
+                    <div class="md:col-span-3">
+                        <label for="order-list-select" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ (เลือกเมนู)</label>
+                        <select id="order-list-select" name="order_list_select"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            <option value="">เลือกเมนู</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-3">
+                        <label for="order-list-select" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ (เลือกเมนู)</label>
+                        <select id="order-list-select" name="order_list_select"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            <option value="">เลือกเมนู</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-3">
+                        <label for="order-list-select" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ (เลือกเมนู)</label>
+                        <select id="order-list-select" name="order_list_select"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            <option value="">เลือกเมนู</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-3">
+                        <label for="order-list-select" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ (เลือกเมนู)</label>
+                        <select id="order-list-select" name="order_list_select"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            <option value="">เลือกเมนู</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-3">
+                        <label for="order-list-select" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ (เลือกเมนู)</label>
+                        <select id="order-list-select" name="order_list_select"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            <option value="">เลือกเมนู</option>
+                        </select>
                     </div>
                     <div>
                         <label for="income" class="block text-sm font-semibold text-slate-700 mb-1">รายรับ</label>
@@ -215,11 +1676,10 @@
                         <input type="number" id="vat_amount" name="vat_amount" step="0.01" value="0.00"
                             class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
                     </div>
-                    <div class="relative">
+                    <div>
                         <label for="raw_material_cost" class="block text-sm font-semibold text-slate-700 mb-1">ค่าวัตถุดิบ (คำนวณอัตโนมัติ)</label>
                         <input type="number" id="raw_material_cost" name="raw_material_cost" step="0.01" value="0.00" readonly
                             class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-200 cursor-not-allowed">
-                        <button type="button" id="calculate-cost-btn" class="absolute right-0 top-0 bottom-0 mr-1 mt-6 px-4 py-1.5 text-xs text-indigo-600 font-semibold rounded-lg hover:bg-slate-200 focus:outline-none">คำนวณ</button>
                     </div>
                     <div>
                         <label for="expense" class="block text-sm font-semibold text-slate-700 mb-1">ค่าใช้จ่ายอื่นๆ</label>
@@ -408,1367 +1868,6 @@
         <p>Tel. 097-197-0933</p>
         <p>&copy; 2025 webdelivery</p>
     </footer>
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, query, where, getDocs, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Firebase configuration
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        
-        // Initialize Firebase
-        let app = null;
-        let auth = null;
-        let db = null;
-        let userId = null;
-        let myChart = null;
-        let myExpenseChart = null;
-        let allTransactions = [];
-        let filteredTransactions = [];
-        let allRecipes = [];
-        let allInventory = {};
-        let rawMaterialCosts = {};
-
-        // Discord Webhook URL (replace with your own)
-        const DISCORD_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1417426298954846289/6DOwlCNNYkcZsJILbFhKqAvX21tp_ZulqyJji6ErC5kR24CNWdv4X-_1ktGbMI5V4ZEp";
-
-        document.addEventListener('DOMContentLoaded', async () => {
-            if (Object.keys(firebaseConfig).length > 0) {
-                app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                setLogLevel('Debug');
-                console.log("Firebase initialized.");
-
-                onAuthStateChanged(auth, async (user) => {
-                    const loadingState = document.getElementById('loading-state');
-                    const mainContent = document.getElementById('main-content');
-                    const loginContent = document.getElementById('login-content');
-                    const logoutBtn = document.getElementById('logout-btn');
-                    const userIdDisplay = document.getElementById('user-id');
-
-                    if (user) {
-                        userId = user.uid;
-                        userIdDisplay.textContent = userId;
-                        console.log("User authenticated:", userId);
-                        loadingState.classList.add('hidden');
-                        loginContent.classList.add('hidden');
-                        mainContent.classList.remove('hidden');
-                        logoutBtn.classList.remove('hidden');
-                        setupDataListeners();
-                        setupInventoryListeners();
-                        setupRecipeListeners();
-                        setupRawMaterialCostListeners();
-                        populateMonthYearSelects();
-                    } else {
-                         // Sign in anonymously if not authenticated
-                        if (typeof __initial_auth_token !== 'undefined') {
-                            try {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } catch (error) {
-                                console.error("Error signing in with custom token:", error);
-                                try {
-                                    await signInAnonymously(auth);
-                                } catch (anonError) {
-                                    console.error("Error signing in anonymously:", anonError);
-                                }
-                            }
-                        } else {
-                            try {
-                                await signInAnonymously(auth);
-                            } catch (anonError) {
-                                console.error("Error signing in anonymously:", anonError);
-                            }
-                        }
-                        console.log("No user signed in. Showing login page.");
-                        loadingState.classList.add('hidden');
-                        loginContent.classList.remove('hidden');
-                        mainContent.classList.add('hidden');
-                        logoutBtn.classList.add('hidden');
-                    }
-                });
-                
-                // Login with Google is not a valid method in this environment
-                document.getElementById('login-btn').addEventListener('click', async () => {
-                    alert('Google login is not supported in this environment. Please use the provided sign-in method.');
-                });
-                
-                document.getElementById('logout-btn').addEventListener('click', async () => {
-                    try {
-                        await signOut(auth);
-                    } catch (error) {
-                        console.error("Error signing out:", error);
-                    }
-                });
-
-                document.getElementById('search-query').addEventListener('input', applyFilters);
-                document.getElementById('filter-channel').addEventListener('change', applyFilters);
-                document.getElementById('filter-start-date').addEventListener('change', applyFilters);
-                document.getElementById('filter-end-date').addEventListener('change', applyFilters);
-                document.getElementById('reset-filters-btn').addEventListener('click', resetFilters);
-                document.getElementById('export-csv-btn').addEventListener('click', () => exportToCSV(filteredTransactions));
-                document.getElementById('export-excel-btn').addEventListener('click', () => exportToExcel(filteredTransactions));
-                
-                document.getElementById('calculate-cost-btn').addEventListener('click', calculateRawMaterialCost);
-
-
-            } else {
-                console.error("Firebase config is missing. The app cannot function without it.");
-                document.getElementById('loading-state').innerHTML = `<p class="text-red-500 font-bold">Error: Firebase configuration is missing.</p>`;
-                document.getElementById('loading-state').classList.remove('hidden');
-            }
-        });
-
-        function showToastNotification(message, isSuccess = true) {
-            const toast = document.getElementById('toast-notification');
-            toast.textContent = message;
-            toast.classList.remove('bg-red-500', 'bg-green-500');
-            toast.classList.add(isSuccess ? 'bg-green-500' : 'bg-red-500');
-            toast.classList.add('show');
-            setTimeout(() => {
-                toast.classList.remove('show');
-            }, 3000);
-        }
-        
-        async function sendDiscordMessage(message, embed = null) {
-            if (DISCORD_WEBHOOK_URL === "https://discord.com/api/webhooks/1234567890/abcdefghijklmnopqrstuvwxyz") {
-                console.warn("Discord Webhook URL not set. Skipping notification.");
-                return;
-            }
-
-            const payload = {
-                content: message,
-                username: "Accounting Bot",
-                avatar_url: "https://placehold.co/60x60/34D399/FFFFFF?text=🤖"
-            };
-
-            if (embed) {
-                payload.embeds = [embed];
-            }
-
-            try {
-                const response = await fetch(DISCORD_WEBHOOK_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (response.ok) {
-                    console.log("Discord notification sent successfully.");
-                } else {
-                    console.error("Failed to send Discord notification:", response.status, response.statusText);
-                }
-            } catch (error) {
-                console.error("Error sending Discord notification:", error);
-            }
-        }
-
-        document.getElementById('transaction-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!db || !userId) {
-                console.error("Firebase is not initialized or user is not authenticated.");
-                return;
-            }
-
-            const formData = new FormData(e.target);
-            const selectedMenus = Array.from(document.getElementById('order-list-select-multiple').selectedOptions).map(option => option.value).join(', ');
-
-            const data = {
-                timestamp: new Date(),
-                date: formData.get('date'),
-                item: formData.get('item'),
-                order_list: selectedMenus,
-                channel: formData.get('channel'),
-                income: parseFloat(formData.get('income')) || 0,
-                gp_fee_excl_vat: parseFloat(formData.get('gp_fee_excl_vat')) || 0,
-                shipping_discount_fee_excl_vat: parseFloat(formData.get('shipping_discount_fee_excl_vat')) || 0,
-                vat_amount: parseFloat(formData.get('vat_amount')) || 0,
-                raw_material_cost: parseFloat(formData.get('raw_material_cost')) || 0,
-                expense: parseFloat(formData.get('expense')) || 0,
-                note: formData.get('note'),
-                buyer_name: formData.get('buyer_name'),
-                order_id: formData.get('order_id'),
-                order_number: formData.get('order_number'),
-                driver_name: formData.get('driver_name'),
-                recordedByUserId: userId
-            };
-
-            try {
-                const transactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
-                await addDoc(transactionsColRef, data);
-                e.target.reset();
-                console.log("Transaction added successfully.");
-                showToastNotification("✅ บันทึกรายการสำเร็จ");
-                updateInventoryOnSale(data);
-                
-                const transactionMessage = `✅ **รายการใหม่ถูกบันทึก:** รายรับ ${data.income.toLocaleString()} บาท จาก ${data.channel}. โดย ${userId}`;
-                sendDiscordMessage(transactionMessage);
-
-            } catch (error) {
-                console.error("Error adding document: ", error);
-            }
-        });
-
-        document.getElementById('inventory-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!db || !userId) {
-                console.error("Firebase is not initialized or user is not authenticated.");
-                return;
-            }
-            
-            const formData = new FormData(e.target);
-            const data = {
-                name: formData.get('inventory-name'),
-                unit: formData.get('inventory-unit'),
-                current_stock: parseFloat(formData.get('inventory-stock')) || 0,
-                low_threshold: parseFloat(formData.get('inventory-threshold')) || 0,
-            };
-
-            try {
-                const inventoryDocRef = doc(db, `artifacts/${appId}/public/data/inventory`, data.name);
-                await setDoc(inventoryDocRef, data);
-                e.target.reset();
-                console.log("Inventory item added/updated successfully.");
-                showToastNotification("✅ อัปเดตสต็อกสำเร็จ");
-                const inventoryMessage = `📦 **ข้อมูลสต็อกอัปเดต:** ${data.name} มีสต็อกใหม่ ${data.current_stock} ${data.unit}. โดย ${userId}`;
-                sendDiscordMessage(inventoryMessage);
-            } catch (error) {
-                console.error("Error adding/updating inventory item: ", error);
-            }
-        });
-
-        document.getElementById('raw-material-cost-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!db || !userId) {
-                console.error("Firebase is not initialized or user is not authenticated.");
-                return;
-            }
-
-            const formData = new FormData(e.target);
-            const data = {
-                name: formData.get('cost-item-name'),
-                cost_per_unit: parseFloat(formData.get('cost-per-unit')) || 0,
-                unit: formData.get('cost-unit'),
-            };
-            
-            try {
-                const costDocRef = doc(db, `artifacts/${appId}/public/data/rawMaterialCosts`, data.name);
-                await setDoc(costDocRef, data);
-                e.target.reset();
-                console.log("Raw material cost added/updated successfully.");
-                showToastNotification("✅ อัปเดตต้นทุนวัตถุดิบสำเร็จ");
-            } catch (error) {
-                console.error("Error adding/updating raw material cost:", error);
-            }
-        });
-
-        async function updateInventoryOnSale(transactionData) {
-            if (!db || !userId || allRecipes.length === 0) {
-                console.log("Recipes not loaded or user not authenticated. Skipping inventory deduction.");
-                return;
-            }
-            
-            const orderList = transactionData.order_list ? transactionData.order_list.toLowerCase().split(',').map(item => item.trim()) : [];
-            const inventoryColRef = collection(db, `artifacts/${appId}/public/data/inventory`);
-            
-            orderList.forEach(async (menuName) => {
-                const recipe = allRecipes.find(r => r.finished_product.toLowerCase() === menuName);
-                if (recipe) {
-                    console.log(`Matching recipe found for: ${recipe.finished_product}`);
-                    const inventorySnapshot = await getDocs(inventoryColRef);
-                    const inventoryItems = {};
-                    inventorySnapshot.forEach(doc => {
-                        inventoryItems[doc.data().name.toLowerCase()] = { id: doc.id, ...doc.data() };
-                    });
-
-                    recipe.raw_materials.forEach(async (rawMaterial) => {
-                        const materialNameLower = rawMaterial.name.toLowerCase();
-                        if (inventoryItems[materialNameLower]) {
-                            const currentStock = inventoryItems[materialNameLower].current_stock || 0;
-                            const newStock = currentStock - (rawMaterial.quantity || 0);
-                            
-                            const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, inventoryItems[materialNameLower].id);
-                            await updateDoc(inventoryRef, { current_stock: newStock });
-                            console.log(`Deducted ${rawMaterial.quantity} ${rawMaterial.unit} of ${rawMaterial.name}. New stock: ${newStock}`);
-                        } else {
-                            console.warn(`Raw material "${rawMaterial.name}" not found in inventory.`);
-                        }
-                    });
-                }
-            });
-
-            const inventorySnapshot = await getDocs(inventoryColRef);
-            const updatedItems = [];
-            inventorySnapshot.forEach(doc => {
-                updatedItems.push({ id: doc.id, ...doc.data() });
-            });
-            checkLowStock(updatedItems);
-        }
-        
-        function setupInventoryListeners() {
-            if (!db || !userId) {
-                console.error("Firebase is not initialized or user is not authenticated.");
-                return;
-            }
-            const inventoryColRef = collection(db, `artifacts/${appId}/public/data/inventory`);
-            onSnapshot(inventoryColRef, (querySnapshot) => {
-                const inventoryItems = [];
-                querySnapshot.forEach((doc) => {
-                    const itemData = { id: doc.id, ...doc.data() };
-                    inventoryItems.push(itemData);
-                    allInventory[doc.id] = itemData;
-                });
-                displayInventory(inventoryItems);
-                checkLowStock(inventoryItems);
-            });
-        }
-
-        function setupRawMaterialCostListeners() {
-            if (!db || !userId) return;
-            const costColRef = collection(db, `artifacts/${appId}/public/data/rawMaterialCosts`);
-            onSnapshot(costColRef, (querySnapshot) => {
-                rawMaterialCosts = {};
-                const costs = [];
-                querySnapshot.forEach(doc => {
-                    const costData = { id: doc.id, ...doc.data() };
-                    rawMaterialCosts[doc.id] = costData;
-                    costs.push(costData);
-                });
-                displayRawMaterialCosts(costs);
-            });
-        }
-        
-        function checkLowStock(inventoryItems) {
-            const lowStockItems = inventoryItems.filter(item => item.current_stock <= item.low_threshold);
-            const lowStockAlert = document.getElementById('low-stock-alert');
-            
-            if (lowStockItems.length > 0) {
-                const messages = lowStockItems.map(item => `⚠️ **${item.name}** สต็อกใกล้หมดแล้ว! มีเพียง ${item.current_stock} ${item.unit} (ต่ำกว่าเกณฑ์ ${item.low_threshold} ${item.unit})`);
-                lowStockAlert.innerHTML = messages.join('<br>');
-                lowStockAlert.classList.remove('hidden');
-                sendDiscordMessage(messages.join('\n'));
-            } else {
-                lowStockAlert.classList.add('hidden');
-            }
-        }
-
-        function displayInventory(items) {
-            const tableBody = document.getElementById('inventory-table-body');
-            tableBody.innerHTML = '';
-            if (items.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลสินค้าคงคลัง</td></tr>`;
-            }
-            items.forEach(item => {
-                const statusColor = item.current_stock <= item.low_threshold ? 'text-rose-600 font-bold' : 'text-emerald-600';
-                const row = document.createElement('tr');
-                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
-                row.innerHTML = `
-                    <td class="px-4 py-2 border-b">${item.name}</td>
-                    <td class="px-4 py-2 border-b">${item.unit}</td>
-                    <td class="px-4 py-2 border-b text-right ${statusColor}">${item.current_stock.toLocaleString()}</td>
-                    <td class="px-4 py-2 border-b text-right">${item.low_threshold.toLocaleString()}</td>
-                    <td class="px-4 py-2 border-b text-center space-x-2">
-                        <button onclick="window.showEditInventoryModal('${item.id}', '${item.name}', '${item.unit}', ${item.current_stock}, ${item.low_threshold})" class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
-                        <button onclick="window.showDeleteInventoryModal('${item.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
-                    </td>
-                `;
-                tableBody.appendChild(row);
-            });
-        }
-
-        function displayRawMaterialCosts(costs) {
-            const tableBody = document.getElementById('raw-material-cost-table-body');
-            tableBody.innerHTML = '';
-            if (costs.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลต้นทุนวัตถุดิบ</td></tr>`;
-            }
-            costs.forEach(cost => {
-                const row = document.createElement('tr');
-                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
-                row.innerHTML = `
-                    <td class="px-4 py-2 border-b">${cost.name}</td>
-                    <td class="px-4 py-2 border-b">${cost.unit}</td>
-                    <td class="px-4 py-2 border-b text-right">${(cost.cost_per_unit || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2 border-b text-center space-x-2">
-                        <button onclick="window.showEditRawMaterialCostModal('${cost.id}', '${cost.name}', '${cost.unit}', ${cost.cost_per_unit})" class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
-                        <button onclick="window.showDeleteRawMaterialCostModal('${cost.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
-                    </td>
-                `;
-                tableBody.appendChild(row);
-            });
-        }
-        
-        function setupDataListeners() {
-            if (!db || !userId) {
-                console.error("Firebase is not initialized or user is not authenticated.");
-                return;
-            }
-
-            const transactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
-            const q = query(transactionsColRef);
-
-            onSnapshot(q, (querySnapshot) => {
-                allTransactions = [];
-                querySnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    allTransactions.push({ id: doc.id, ...data, timestamp: data.timestamp ? data.timestamp.toDate() : new Date() });
-                });
-
-                allTransactions.sort((a, b) => {
-                    const dateA = new Date(a.date);
-                    const dateB = new Date(b.date);
-                    if (dateA - dateB !== 0) {
-                        return dateA - dateB;
-                    }
-                    return a.timestamp - b.timestamp;
-                });
-                
-                applyFilters();
-            }, (error) => {
-                console.error("Error listening to transactions:", error);
-            });
-        }
-        
-        function applyFilters() {
-            const searchQuery = document.getElementById('search-query').value.toLowerCase();
-            const filterChannel = document.getElementById('filter-channel').value;
-            const startDate = document.getElementById('filter-start-date').value;
-            const endDate = document.getElementById('filter-end-date').value;
-            
-            filteredTransactions = allTransactions.filter(transaction => {
-                const searchMatch = !searchQuery || (
-                    (transaction.order_number && transaction.order_number.toLowerCase().includes(searchQuery)) ||
-                    (transaction.buyer_name && transaction.buyer_name.toLowerCase().includes(searchQuery)) ||
-                    (transaction.item && transaction.item.toLowerCase().includes(searchQuery)) ||
-                    (transaction.order_list && transaction.order_list.toLowerCase().includes(searchQuery)) ||
-                    (transaction.note && transaction.note.toLowerCase().includes(searchQuery))
-                );
-
-                const channelMatch = !filterChannel || transaction.channel === filterChannel;
-
-                const dateMatch = (!startDate || new Date(transaction.date) >= new Date(startDate)) &&
-                                 (!endDate || new Date(transaction.date) <= new Date(endDate + 'T23:59:59'));
-                
-                return searchMatch && channelMatch && dateMatch;
-            });
-            
-            displayTransactions(filteredTransactions);
-            updateMonthlySummary(filteredTransactions);
-            updateChart(filteredTransactions);
-            updateExpenseChart(filteredTransactions);
-        }
-
-        function resetFilters() {
-            document.getElementById('search-query').value = '';
-            document.getElementById('filter-channel').value = '';
-            document.getElementById('filter-start-date').value = '';
-            document.getElementById('filter-end-date').value = '';
-            applyFilters();
-        }
-
-        function exportToCSV(data) {
-            if (data.length === 0) {
-                console.warn("No data to export.");
-                return;
-            }
-
-            const header = [
-                "วัน/เวลา", "ช่องทาง", "เลขออเดอร์", "ชื่อผู้ซื้อ", "คนขับ", "รายการ", "รายการสั่งซื้อ", 
-                "รายรับ (บาท)", "ค่า GP (ไม่รวม VAT)", "ค่าส่วนลด (ไม่รวม VAT)", "ค่า VAT", 
-                "ค่าวัตถุดิบ (บาท)", "ค่าใช้จ่ายอื่นๆ (บาท)", "กำไร (บาท)", "หมายเหตุ", "ผู้บันทึก/แก้ไข (อีเมล)"
-            ].join(',');
-            
-            const csvRows = data.map(transaction => {
-                const profit = (transaction.income || 0) - ((transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0));
-                
-                const escapeCSV = (value) => {
-                    if (value === null || value === undefined) return '';
-                    let str = String(value);
-                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                        return `"${str.replace(/"/g, '""')}"`;
-                    }
-                    return str;
-                };
-
-                return [
-                    escapeCSV(transaction.date.split('T')[0]),
-                    escapeCSV(transaction.channel || ''),
-                    escapeCSV(transaction.order_number || ''),
-                    escapeCSV(transaction.buyer_name || ''),
-                    escapeCSV(transaction.driver_name || ''),
-                    escapeCSV(transaction.item || ''),
-                    escapeCSV(transaction.order_list || ''),
-                    escapeCSV(transaction.income || 0),
-                    escapeCSV(transaction.gp_fee_excl_vat || 0),
-                    escapeCSV(transaction.shipping_discount_fee_excl_vat || 0),
-                    escapeCSV(transaction.vat_amount || 0),
-                    escapeCSV(transaction.raw_material_cost || 0),
-                    escapeCSV(transaction.expense || 0),
-                    escapeCSV(profit),
-                    escapeCSV(transaction.note || ''),
-                    escapeCSV(transaction.recordedByUserId || '')
-                ].join(',');
-            });
-            const BOM = "\uFEFF"; // Byte Order Mark
-            const csvString = [BOM + header, ...csvRows].join('\n');
-            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', 'delivery_transactions.csv');
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            console.log("Exported to CSV successfully.");
-        }
-
-        function exportToExcel(data) {
-            if (data.length === 0) {
-                console.warn("No data to export.");
-                return;
-            }
-
-            const header = [
-                "วัน/เวลา", "ช่องทาง", "เลขออเดอร์", "ชื่อผู้ซื้อ", "คนขับ", "รายการ", "รายการสั่งซื้อ", 
-                "รายรับ (บาท)", "ค่า GP (ไม่รวม VAT)", "ค่าส่วนลด (ไม่รวม VAT)", "ค่า VAT", 
-                "ค่าวัตถุดิบ (บาท)", "ค่าใช้จ่ายอื่นๆ (บาท)", "กำไร (บาท)", "หมายเหตุ", "ผู้บันทึก/แก้ไข (อีเมล)"
-            ];
-
-            const excelRows = data.map(transaction => {
-                const profit = (transaction.income || 0) - ((transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0));
-                
-                return [
-                    transaction.date.split('T')[0],
-                    transaction.channel || '',
-                    transaction.order_number || '',
-                    transaction.buyer_name || '',
-                    transaction.driver_name || '',
-                    transaction.item || '',
-                    transaction.order_list || '',
-                    (transaction.income || 0),
-                    (transaction.gp_fee_excl_vat || 0),
-                    (transaction.shipping_discount_fee_excl_vat || 0),
-                    (transaction.vat_amount || 0),
-                    (transaction.raw_material_cost || 0),
-                    (transaction.expense || 0),
-                    profit,
-                    transaction.note || '',
-                    transaction.recordedByUserId || ''
-                ];
-            });
-
-            const ws = XLSX.utils.aoa_to_sheet([header, ...excelRows]);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Transactions");
-            XLSX.writeFile(wb, "delivery_transactions.xlsx");
-            console.log("Exported to Excel successfully.");
-        }
-
-        function populateMonthYearSelects() {
-            const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-            const monthSelect = document.getElementById('summary-month');
-            const yearSelect = document.getElementById('summary-year');
-            const currentYear = new Date().getFullYear();
-            const currentMonth = new Date().getMonth();
-
-            monthSelect.innerHTML = '';
-            yearSelect.innerHTML = '';
-
-            for (let i = 0; i < months.length; i++) {
-                const option = document.createElement('option');
-                option.value = i + 1;
-                option.textContent = months[i];
-                if (i === currentMonth) {
-                    option.selected = true;
-                }
-                monthSelect.appendChild(option);
-            }
-
-            for (let i = currentYear - 5; i <= currentYear; i++) {
-                const option = document.createElement('option');
-                option.value = i;
-                option.textContent = i;
-                if (i === currentYear) {
-                    option.selected = true;
-                }
-                yearSelect.appendChild(option);
-            }
-
-            monthSelect.addEventListener('change', () => applyFilters());
-            yearSelect.addEventListener('change', () => applyFilters());
-        }
-        
-        function updateMonthlySummary(transactions = []) {
-            const selectedMonth = parseInt(document.getElementById('summary-month').value);
-            const selectedYear = parseInt(document.getElementById('summary-year').value);
-
-            let monthlyIncome = 0;
-            let monthlyExpense = 0;
-
-            transactions.forEach(transaction => {
-                const transactionDate = new Date(transaction.date);
-                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
-
-                if (transactionDate.getMonth() + 1 === selectedMonth && transactionDate.getFullYear() === selectedYear) {
-                    monthlyIncome += (transaction.income || 0);
-                    monthlyExpense += totalTransactionExpense;
-                }
-            });
-
-            document.getElementById('monthly-income').textContent = monthlyIncome.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('monthly-expense').textContent = monthlyExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            const monthlyProfit = monthlyIncome - monthlyExpense;
-            document.getElementById('monthly-profit').textContent = monthlyProfit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('monthly-profit').classList.remove('text-emerald-600', 'text-rose-600');
-            document.getElementById('monthly-profit').classList.add(monthlyProfit >= 0 ? 'text-emerald-600' : 'text-rose-600');
-        }
-
-        function updateChart(transactions = []) {
-            const channelData = transactions.reduce((acc, transaction) => {
-                const channel = transaction.channel || 'ไม่ระบุ';
-                acc[channel] = (acc[channel] || 0) + (transaction.income || 0);
-                return acc;
-            }, {});
-
-            const labels = Object.keys(channelData);
-            const data = Object.values(channelData);
-            const backgroundColors = [
-                'rgb(16, 185, 129)',  // Emerald-500
-                'rgb(99, 102, 241)',  // Indigo-500
-                'rgb(244, 63, 94)',   // Rose-500
-                'rgb(245, 158, 11)',  // Amber-500
-                'rgb(59, 130, 246)'   // Blue-500
-            ];
-
-            const chartData = {
-                labels: labels,
-                datasets: [{
-                    data: data,
-                    backgroundColor: backgroundColors,
-                    hoverOffset: 4
-                }]
-            };
-
-            if (myChart) {
-                myChart.data = chartData;
-                myChart.update();
-            } else {
-                const ctx = document.getElementById('myChart').getContext('2d');
-                myChart = new Chart(ctx, {
-                    type: 'pie',
-                    data: chartData,
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            legend: {
-                                position: 'top',
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        let label = context.label || '';
-                                        const value = context.parsed;
-                                        const total = context.dataset.data.reduce((sum, current) => sum + current, 0);
-                                        const percentage = ((value / total) * 100).toFixed(2);
-                                        return `${label}: ${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท (${percentage}%)`;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-        }
-
-        // New function to update the expense chart
-        function updateExpenseChart(transactions = []) {
-            const expenseData = transactions.reduce((acc, transaction) => {
-                acc['ค่า GP'] = (acc['ค่า GP'] || 0) + (transaction.gp_fee_excl_vat || 0);
-                acc['ค่าส่วนลดค่าส่ง'] = (acc['ค่าส่วนลดค่าส่ง'] || 0) + (transaction.shipping_discount_fee_excl_vat || 0);
-                acc['ค่า VAT'] = (acc['ค่า VAT'] || 0) + (transaction.vat_amount || 0);
-                acc['ค่าวัตถุดิบ'] = (acc['ค่าวัตถุดิบ'] || 0) + (transaction.raw_material_cost || 0);
-                acc['ค่าใช้จ่ายอื่นๆ'] = (acc['ค่าใช้จ่ายอื่นๆ'] || 0) + (transaction.expense || 0);
-                return acc;
-            }, {});
-
-            const labels = Object.keys(expenseData);
-            const data = Object.values(expenseData);
-            const backgroundColors = [
-                'rgb(255, 99, 132)',  // Red
-                'rgb(255, 159, 64)',  // Orange
-                'rgb(255, 205, 86)',  // Yellow
-                'rgb(75, 192, 192)',  // Green
-                'rgb(54, 162, 235)'   // Blue
-            ];
-
-            const chartData = {
-                labels: labels,
-                datasets: [{
-                    data: data,
-                    backgroundColor: backgroundColors,
-                    hoverOffset: 4
-                }]
-            };
-
-            if (myExpenseChart) {
-                myExpenseChart.data = chartData;
-                myExpenseChart.update();
-            } else {
-                const ctx = document.getElementById('myExpenseChart').getContext('2d');
-                myExpenseChart = new Chart(ctx, {
-                    type: 'pie',
-                    data: chartData,
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            legend: {
-                                position: 'top',
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        let label = context.label || '';
-                                        const value = context.parsed;
-                                        const total = context.dataset.data.reduce((sum, current) => sum + current, 0);
-                                        const percentage = ((value / total) * 100).toFixed(2);
-                                        return `${label}: ${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท (${percentage}%)`;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-        }
-
-        // Display transactions in the table and update summary
-        function displayTransactions(transactions) {
-            const tableBody = document.getElementById('transaction-table-body');
-            const totalIncomeEl = document.getElementById('total-income');
-            const totalExpenseEl = document.getElementById('total-expense');
-            const totalProfitEl = document.getElementById('total-profit');
-
-            tableBody.innerHTML = '';
-            let totalIncome = 0;
-            let totalExpense = 0;
-
-            if (transactions.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="17" class="text-center py-4 text-gray-500">ยังไม่มีข้อมูลการทำธุรกรรม</td></tr>`;
-            }
-
-            transactions.forEach(transaction => {
-                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
-                totalIncome += (transaction.income || 0);
-                totalExpense += totalTransactionExpense;
-
-                const profit = (transaction.income || 0) - totalTransactionExpense;
-                const row = document.createElement('tr');
-                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
-                const transactionData = {
-                    id: transaction.id,
-                    note: transaction.note || '',
-                    buyer_name: transaction.buyer_name || '',
-                    order_id: transaction.order_id || '',
-                    order_number: transaction.order_number || '',
-                    driver_name: transaction.driver_name || '',
-                    income: transaction.income || 0,
-                    gp_fee_excl_vat: transaction.gp_fee_excl_vat || 0,
-                    shipping_discount_fee_excl_vat: transaction.shipping_discount_fee_excl_vat || 0,
-                    expense: transaction.expense || 0,
-                    order_list: transaction.order_list || '',
-                    vat_amount: transaction.vat_amount || 0,
-                    raw_material_cost: transaction.raw_material_cost || 0,
-                    recordedByUserId: transaction.recordedByUserId || ''
-                };
-                row.innerHTML = `
-                    <td class="px-4 py-2 border-b whitespace-nowrap">${transaction.date.split('T')[0]}</td>
-                    <td class="px-4 py-2 border-b">${transaction.channel || ''}</td>
-                    <td class="px-4 py-2 border-b">${transaction.order_number || ''}</td>
-                    <td class="px-4 py-2 border-b">${transaction.buyer_name || ''}</td>
-                    <td class="px-4 py-2 border-b">${transaction.driver_name || ''}</td>
-                    <td class="px-4 py-2 border-b">${transaction.item || ''}</td>
-                    <td class="px-4 py-2 border-b">${transaction.order_list || ''}</td>
-                    <td class="px-4 py-2 border-b text-right">${(transaction.income || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2 border-b text-right">${(transaction.gp_fee_excl_vat || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2 border-b text-right">${(transaction.shipping_discount_fee_excl_vat || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2 border-b text-right">${(transaction.vat_amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2 border-b text-right">${(transaction.raw_material_cost || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2 border-b text-right">${(transaction.expense || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2 border-b text-right ${profit >= 0 ? 'text-teal-600' : 'text-rose-600'}">${profit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2 border-b">${transaction.note || ''}</td>
-                    <td class="px-4 py-2 border-b text-sm font-mono whitespace-nowrap">${transaction.recordedByUserId || ''}</td>
-                    <td class="px-4 py-2 border-b text-center space-x-2 whitespace-nowrap">
-                        <button onclick='window.showEditModal(${JSON.stringify(transactionData)})' class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
-                        <button onclick="window.showDeleteModal('${transaction.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
-                    </td>
-                `;
-                tableBody.appendChild(row);
-            });
-
-            totalIncomeEl.textContent = totalIncome.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            totalExpenseEl.textContent = totalExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            totalProfitEl.textContent = (totalIncome - totalExpense).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            totalProfitEl.classList.remove('text-teal-600', 'text-rose-600');
-            totalProfitEl.classList.add((totalIncome - totalExpense) >= 0 ? 'text-teal-600' : 'text-rose-600');
-        }
-
-        const modal = document.getElementById('modal');
-        const modalTitle = document.getElementById('modal-title');
-        const modalBody = document.getElementById('modal-body');
-        const modalConfirm = document.getElementById('modal-confirm');
-        const modalCancel = document.getElementById('modal-cancel');
-
-        window.showEditModal = (transactionData) => {
-            modalTitle.textContent = 'แก้ไขรายการ';
-            
-            // Re-populate the multiple select for the modal
-            const menuOptionsHtml = allRecipes.map(recipe => {
-                const isSelected = transactionData.order_list.split(',').map(item => item.trim()).includes(recipe.finished_product);
-                return `<option value="${recipe.finished_product}" ${isSelected ? 'selected' : ''}>${recipe.finished_product}</option>`;
-            }).join('');
-            
-            modalBody.innerHTML = `
-                <div class="space-y-4 text-left">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อผู้ซื้อ</label>
-                        <input type="text" id="modal-buyer-name" value="${transactionData.buyer_name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">รหัสใบสั่งซื้อ</label>
-                        <input type="text" id="modal-order-id" value="${transactionData.order_id}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">เลขออเดอร์</label>
-                        <input type="text" id="modal-order-number" value="${transactionData.order_number}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">คนขับ</label>
-                        <input type="text" id="modal-driver-name" value="${transactionData.driver_name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">รายการสั่งซื้อ (เลือกได้หลายเมนู)</label>
-                        <select id="modal-order-list-select-multiple" multiple size="5" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
-                            ${menuOptionsHtml}
-                        </select>
-                        <p class="text-xs text-slate-500 mt-1">ใช้ปุ่ม Ctrl/Cmd + คลิก เพื่อเลือกหลายรายการ</p>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">รายรับ</label>
-                        <input type="number" id="modal-income" value="${transactionData.income}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าใช้จ่าย GP (ไม่รวม VAT)</label>
-                        <input type="number" id="modal-gp-fee-excl-vat" value="${transactionData.gp_fee_excl_vat}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าส่วนลดค่าส่ง (ไม่รวม VAT)</label>
-                        <input type="number" id="modal-shipping-discount-fee-excl-vat" value="${transactionData.shipping_discount_fee_excl_vat}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่า VAT</label>
-                        <input type="number" id="modal-vat-amount" value="${transactionData.vat_amount}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าวัตถุดิบ</label>
-                        <input type="number" id="modal-raw-material-cost" value="${transactionData.raw_material_cost}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ค่าใช้จ่ายอื่นๆ</label>
-                        <input type="number" id="modal-expense" value="${transactionData.expense}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">หมายเหตุ</label>
-                        <input type="text" id="modal-note" value="${transactionData.note}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                </div>
-            `;
-            modalConfirm.onclick = () => {
-                const newIncome = parseFloat(document.getElementById('modal-income').value);
-                const newGpFeeExclVat = parseFloat(document.getElementById('modal-gp-fee-excl-vat').value);
-                const newShippingDiscountFeeExclVat = parseFloat(document.getElementById('modal-shipping-discount-fee-excl-vat').value);
-                const newVatAmount = parseFloat(document.getElementById('modal-vat-amount').value);
-                const newRawMaterialCost = parseFloat(document.getElementById('modal-raw-material-cost').value);
-                const newExpense = parseFloat(document.getElementById('modal-expense').value);
-                const newNote = document.getElementById('modal-note').value;
-                const newBuyerName = document.getElementById('modal-buyer-name').value;
-                const newOrderNumber = document.getElementById('modal-order-number').value;
-                const newDriverName = document.getElementById('modal-driver-name').value;
-                const newOrderList = Array.from(document.getElementById('modal-order-list-select-multiple').selectedOptions).map(option => option.value).join(', ');
-
-                editTransaction(transactionData.id, newIncome, newGpFeeExclVat, newShippingDiscountFeeExclVat, newVatAmount, newRawMaterialCost, newExpense, newNote, newBuyerName, newOrderNumber, newDriverName, newOrderList);
-                modal.style.display = 'none';
-            };
-            modalCancel.onclick = () => {
-                modal.style.display = 'none';
-            };
-            modal.style.display = 'flex';
-        };
-
-        window.showDeleteModal = (id) => {
-            modalTitle.textContent = 'ยืนยันการลบ';
-            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบรายการนี้?</p>`;
-            modalConfirm.onclick = () => {
-                deleteTransaction(id);
-                modal.style.display = 'none';
-            };
-            modalCancel.onclick = () => {
-                modal.style.display = 'none';
-            };
-            modal.style.display = 'flex';
-        };
-
-        async function editTransaction(id, newIncome, newGpFeeExclVat, newShippingDiscountFeeExclVat, newVatAmount, newRawMaterialCost, newExpense, newNote, newBuyerName, newOrderNumber, newDriverName, newOrderList) {
-            if (!db || !userId) return;
-            try {
-                const transactionRef = doc(db, `artifacts/${appId}/public/data/transactions`, id);
-                await updateDoc(transactionRef, { 
-                    income: newIncome, 
-                    gp_fee_excl_vat: newGpFeeExclVat, 
-                    shipping_discount_fee_excl_vat: newShippingDiscountFeeExclVat, 
-                    vat_amount: newVatAmount,
-                    raw_material_cost: newRawMaterialCost,
-                    expense: newExpense, 
-                    note: newNote,
-                    buyer_name: newBuyerName,
-                    order_number: newOrderNumber,
-                    driver_name: newDriverName,
-                    order_list: newOrderList,
-                    recordedByUserId: userId
-                });
-                console.log("Transaction updated successfully.");
-                showToastNotification("✅ แก้ไขรายการสำเร็จ");
-                const transactionMessage = `✏️ **รายการถูกแก้ไข:** รายการ ${newOrderNumber} ถูกแก้ไขโดยผู้ใช้. โดย ${userId}`;
-                sendDiscordMessage(transactionMessage);
-            } catch (error) {
-                console.error("Error updating document:", error);
-            }
-        }
-
-        async function deleteTransaction(id) {
-            if (!db || !userId) return;
-            try {
-                const transactionRef = doc(db, `artifacts/${appId}/public/data/transactions`, id);
-                await deleteDoc(transactionRef);
-                console.log("Transaction deleted successfully.");
-                showToastNotification("🗑️ ลบรายการสำเร็จ");
-                const transactionMessage = `🗑️ **รายการถูกลบ:** รายการ ${id} ถูกลบออกจากระบบ. โดย ${userId}`;
-                sendDiscordMessage(transactionMessage);
-            } catch (error) {
-                console.error("Error deleting document:", error);
-            }
-        }
-        
-        window.showEditInventoryModal = (id, name, unit, current_stock, low_threshold) => {
-            modalTitle.textContent = 'แก้ไขรายการสต็อก';
-            modalBody.innerHTML = `
-                <div class="space-y-4 text-left">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
-                        <input type="text" id="modal-inventory-name" value="${name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วยนับ</label>
-                        <input type="text" id="modal-inventory-unit" value="${unit}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">สต็อกปัจจุบัน</label>
-                        <input type="number" id="modal-inventory-stock" value="${current_stock}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">เกณฑ์แจ้งเตือนสต็อกต่ำ</label>
-                        <input type="number" id="modal-inventory-threshold" value="${low_threshold}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                </div>
-            `;
-            modalConfirm.onclick = () => {
-                const newName = document.getElementById('modal-inventory-name').value;
-                const newUnit = document.getElementById('modal-inventory-unit').value;
-                const newStock = parseFloat(document.getElementById('modal-inventory-stock').value);
-                const newThreshold = parseFloat(document.getElementById('modal-inventory-threshold').value);
-                editInventory(id, newName, newUnit, newStock, newThreshold);
-                modal.style.display = 'none';
-            };
-            modalCancel.onclick = () => {
-                modal.style.display = 'none';
-            };
-            modal.style.display = 'flex';
-        };
-
-        window.showDeleteInventoryModal = (id) => {
-            modalTitle.textContent = 'ยืนยันการลบสต็อก';
-            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบรายการสต็อกนี้?</p>`;
-            modalConfirm.onclick = () => {
-                deleteInventory(id);
-                modal.style.display = 'none';
-            };
-            modalCancel.onclick = () => {
-                modal.style.display = 'none';
-            };
-            modal.style.display = 'flex';
-        };
-
-        async function editInventory(id, name, unit, current_stock, low_threshold) {
-            if (!db || !userId) return;
-            try {
-                const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, id);
-                await updateDoc(inventoryRef, { name, unit, current_stock, low_threshold });
-                console.log("Inventory item updated successfully.");
-                showToastNotification("✅ แก้ไขสต็อกสำเร็จ");
-                const inventoryMessage = `✏️ **รายการสต็อกถูกแก้ไข:** ${name} มีสต็อกใหม่ ${current_stock} ${unit}. โดย ${userId}`;
-                sendDiscordMessage(inventoryMessage);
-            } catch (error) {
-                console.error("Error updating inventory document:", error);
-            }
-        }
-        
-        async function deleteInventory(id) {
-            if (!db || !userId) return;
-            try {
-                const inventoryRef = doc(db, `artifacts/${appId}/public/data/inventory`, id);
-                await deleteDoc(inventoryRef);
-                console.log("Inventory item deleted successfully.");
-                showToastNotification("🗑️ ลบสต็อกสำเร็จ");
-                const deleteMessage = `🗑️ **รายการสต็อกถูกลบ:** รายการ ${id} ถูกลบออกจากระบบ. โดย ${userId}`;
-                sendDiscordMessage(deleteMessage);
-            } catch (error) {
-                console.error("Error deleting inventory document:", error);
-            }
-        }
-        
-        window.showEditRawMaterialCostModal = (id, name, unit, cost_per_unit) => {
-            modalTitle.textContent = 'แก้ไขต้นทุนวัตถุดิบ';
-            modalBody.innerHTML = `
-                <div class="space-y-4 text-left">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
-                        <input type="text" id="modal-cost-item-name" value="${name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วยนับ</label>
-                        <input type="text" id="modal-cost-unit" value="${unit}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ราคาต่อหน่วย (บาท)</label>
-                        <input type="number" id="modal-cost-per-unit" value="${cost_per_unit}" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                </div>
-            `;
-            modalConfirm.onclick = () => {
-                const newName = document.getElementById('modal-cost-item-name').value;
-                const newUnit = document.getElementById('modal-cost-unit').value;
-                const newCost = parseFloat(document.getElementById('modal-cost-per-unit').value);
-                editRawMaterialCost(id, newName, newUnit, newCost);
-                modal.style.display = 'none';
-            };
-            modalCancel.onclick = () => { modal.style.display = 'none'; };
-            modal.style.display = 'flex';
-        };
-
-        window.showDeleteRawMaterialCostModal = (id) => {
-            modalTitle.textContent = 'ยืนยันการลบต้นทุนวัตถุดิบ';
-            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบต้นทุนวัตถุดิบนี้?</p>`;
-            modalConfirm.onclick = () => {
-                deleteRawMaterialCost(id);
-                modal.style.display = 'none';
-            };
-            modalCancel.onclick = () => { modal.style.display = 'none'; };
-            modal.style.display = 'flex';
-        };
-
-        async function editRawMaterialCost(id, name, unit, cost_per_unit) {
-            if (!db || !userId) return;
-            try {
-                const costRef = doc(db, `artifacts/${appId}/public/data/rawMaterialCosts`, id);
-                await updateDoc(costRef, { name, unit, cost_per_unit });
-                showToastNotification("✅ แก้ไขต้นทุนวัตถุดิบสำเร็จ");
-            } catch (error) {
-                console.error("Error updating raw material cost:", error);
-            }
-        }
-        
-        async function deleteRawMaterialCost(id) {
-            if (!db || !userId) return;
-            try {
-                const costRef = doc(db, `artifacts/${appId}/public/data/rawMaterialCosts`, id);
-                await deleteDoc(costRef);
-                showToastNotification("🗑️ ลบต้นทุนวัตถุดิบสำเร็จ");
-            } catch (error) {
-                console.error("Error deleting raw material cost:", error);
-            }
-        }
-
-        window.onclick = function(event) {
-            if (event.target == modal) {
-                modal.style.display = 'none';
-            }
-        };
-
-        let rawMaterialCount = 1;
-
-        window.addRawMaterialField = () => {
-            rawMaterialCount++;
-            const container = document.getElementById('raw-materials-container');
-            const newField = document.createElement('div');
-            newField.classList.add('flex', 'space-x-2', 'items-end');
-            newField.innerHTML = `
-                <div class="flex-1">
-                    <label for="raw-material-name-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
-                    <input type="text" id="raw-material-name-${rawMaterialCount}" name="raw_material_name" placeholder="เช่น ไข่ไก่" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                </div>
-                <div class="flex-1">
-                    <label for="raw-material-quantity-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
-                    <input type="number" id="raw-material-quantity-${rawMaterialCount}" name="raw_material_quantity" value="1" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                </div>
-                <div class="flex-1">
-                    <label for="raw-material-unit-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
-                    <input type="text" id="raw-material-unit-${rawMaterialCount}" name="raw_material_unit" placeholder="เช่น ฟอง, กรัม" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                </div>
-                <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600">ลบ</button>
-            `;
-            container.appendChild(newField);
-        };
-
-        document.getElementById('add-raw-material-btn').addEventListener('click', () => {
-            window.addRawMaterialField();
-        });
-
-        document.getElementById('recipe-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!db || !userId) {
-                console.error("Firebase is not initialized or user is not authenticated.");
-                return;
-            }
-
-            const finishedProduct = document.getElementById('finished-product-name').value;
-            const rawMaterials = [];
-            const rawMaterialNames = document.querySelectorAll('input[name="raw_material_name"]');
-            const rawMaterialQuantities = document.querySelectorAll('input[name="raw_material_quantity"]');
-            const rawMaterialUnits = document.querySelectorAll('input[name="raw_material_unit"]');
-
-            rawMaterialNames.forEach((nameInput, index) => {
-                rawMaterials.push({
-                    name: nameInput.value,
-                    quantity: parseFloat(rawMaterialQuantities[index].value) || 0,
-                    unit: rawMaterialUnits[index].value
-                });
-            });
-
-            const data = {
-                finished_product: finishedProduct,
-                raw_materials: rawMaterials,
-                recordedByUserId: userId
-            };
-            
-            try {
-                const recipesColRef = collection(db, `artifacts/${appId}/public/data/recipes`);
-                await setDoc(doc(recipesColRef, finishedProduct), data);
-                e.target.reset();
-                document.getElementById('raw-materials-container').innerHTML = `
-                    <div class="flex space-x-2 items-end">
-                        <div class="flex-1">
-                            <label for="raw-material-name-0" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อวัตถุดิบ</label>
-                            <input type="text" id="raw-material-name-0" name="raw_material_name" placeholder="เช่น เส้นก๋วยเตี๋ยว" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
-                        </div>
-                        <div class="flex-1">
-                            <label for="raw-material-quantity-0" class="block text-sm font-semibold text-slate-700 mb-1">ปริมาณ</label>
-                            <input type="number" id="raw-material-quantity-0" name="raw_material_quantity" value="1" step="0.01" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
-                        </div>
-                        <div class="flex-1">
-                            <label for="raw-material-unit-0" class="block text-sm font-semibold text-slate-700 mb-1">หน่วย</label>
-                            <input type="text" id="raw-material-unit-0" name="raw_material_unit" placeholder="เช่น กรัม" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
-                        </div>
-                        <button type="button" onclick="this.parentNode.remove()" class="px-4 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600">ลบ</button>
-                    </div>
-                `;
-                rawMaterialCount = 1;
-                console.log("Recipe saved successfully.");
-                showToastNotification("✅ บันทึกสูตรสำเร็จ");
-                const recipeMessage = `📝 **สูตรใหม่ถูกบันทึก/แก้ไข:** สูตรสำหรับ ${finishedProduct} ถูกอัปเดตโดย ${userId}.`;
-                sendDiscordMessage(recipeMessage);
-            } catch (error) {
-                console.error("Error saving recipe:", error);
-            }
-        });
-
-        function setupRecipeListeners() {
-            if (!db || !userId) return;
-            const recipesColRef = collection(db, `artifacts/${appId}/public/data/recipes`);
-            onSnapshot(recipesColRef, (querySnapshot) => {
-                allRecipes = [];
-                const multiSelect = document.getElementById('order-list-select-multiple');
-                multiSelect.innerHTML = '';
-                querySnapshot.forEach((doc) => {
-                    const recipeData = { id: doc.id, ...doc.data() };
-                    allRecipes.push(recipeData);
-                    // Populate multi-select
-                    const option = document.createElement('option');
-                    option.value = recipeData.finished_product;
-                    option.textContent = recipeData.finished_product;
-                    multiSelect.appendChild(option);
-                });
-                displayRecipes(allRecipes);
-            });
-        }
-
-        function calculateRawMaterialCost() {
-            const multiSelect = document.getElementById('order-list-select-multiple');
-            const rawMaterialCostInput = document.getElementById('raw_material_cost');
-            const selectedMenus = Array.from(multiSelect.selectedOptions).map(option => option.value);
-            let totalCost = 0;
-
-            if (selectedMenus.length > 0) {
-                selectedMenus.forEach(menuName => {
-                    const recipe = allRecipes.find(r => r.finished_product === menuName);
-                    if (recipe) {
-                        recipe.raw_materials.forEach(material => {
-                            const costPerUnit = rawMaterialCosts[material.name]?.cost_per_unit || 0;
-                            totalCost += costPerUnit * (material.quantity || 0);
-                        });
-                    }
-                });
-            }
-
-            rawMaterialCostInput.value = totalCost.toFixed(2);
-        }
-
-        function displayRecipes(recipes) {
-            const tableBody = document.getElementById('recipe-table-body');
-            tableBody.innerHTML = '';
-            if (recipes.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-gray-500">ยังไม่มีสูตรวัตถุดิบ</td></tr>`;
-            }
-            recipes.forEach(recipe => {
-                const row = document.createElement('tr');
-                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
-                const rawMaterialsList = recipe.raw_materials.map(mat => `${mat.name} (${mat.quantity} ${mat.unit})`).join(', ');
-                row.innerHTML = `
-                    <td class="px-4 py-2 border-b font-semibold">${recipe.finished_product}</td>
-                    <td class="px-4 py-2 border-b text-sm">${rawMaterialsList}</td>
-                    <td class="px-4 py-2 border-b text-center space-x-2 whitespace-nowrap">
-                        <button onclick='window.showEditRecipeModal(${JSON.stringify(recipe)})' class="text-blue-500 hover:text-blue-700 font-medium">แก้ไข</button>
-                        <button onclick="window.showDeleteRecipeModal('${recipe.id}')" class="text-red-500 hover:text-red-700 font-medium">ลบ</button>
-                    </td>
-                `;
-                tableBody.appendChild(row);
-            });
-        }
-        
-        window.showEditRecipeModal = (recipeData) => {
-            modalTitle.textContent = 'แก้ไขสูตรวัตถุดิบ';
-            let rawMaterialHtml = recipeData.raw_materials.map((mat, index) => `
-                <div class="flex space-x-2 items-end">
-                    <div class="flex-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
-                        <input type="text" id="modal-raw-material-name-${index}" value="${mat.name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div class="flex-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
-                        <input type="number" id="modal-raw-material-quantity-${index}" value="${mat.quantity}" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div class="flex-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
-                        <input type="text" id="modal-raw-material-unit-${index}" value="${mat.unit}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
-                </div>
-            `).join('');
-
-            modalBody.innerHTML = `
-                <div class="space-y-4 text-left">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อเมนู</label>
-                        <input type="text" id="modal-finished-product-name" value="${recipeData.finished_product}" class="w-full px-3 py-2 border border-gray-300 rounded-md" disabled>
-                    </div>
-                    <div id="modal-raw-materials-container" class="space-y-2">${rawMaterialHtml}</div>
-                    <button type="button" id="modal-add-raw-material-btn" class="mt-2 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">เพิ่มวัตถุดิบ</button>
-                </div>
-            `;
-
-            document.getElementById('modal-add-raw-material-btn').addEventListener('click', () => {
-                const container = document.getElementById('modal-raw-materials-container');
-                const newField = document.createElement('div');
-                newField.classList.add('flex', 'space-x-2', 'items-end');
-                newField.innerHTML = `
-                    <div class="flex-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวัตถุดิบ</label>
-                        <input type="text" name="modal-raw-material-name" placeholder="เช่น ไข่ไก่" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div class="flex-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
-                        <input type="number" name="modal-raw-material-quantity" value="1" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div class="flex-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
-                        <input type="text" name="modal-raw-material-unit" placeholder="เช่น ฟอง, กรัม" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
-                `;
-                container.appendChild(newField);
-            });
-
-            modalConfirm.onclick = () => {
-                const newRawMaterials = [];
-                const names = document.querySelectorAll('#modal-raw-materials-container input[name="modal-raw-material-name"]');
-                const quantities = document.querySelectorAll('#modal-raw-materials-container input[name="modal-raw-material-quantity"]');
-                const units = document.querySelectorAll('#modal-raw-materials-container input[name="modal-raw-material-unit"]');
-                
-                names.forEach((nameInput, index) => {
-                    newRawMaterials.push({
-                        name: nameInput.value,
-                        quantity: parseFloat(quantities[index].value) || 0,
-                        unit: units[index].value
-                    });
-                });
-
-                editRecipe(recipeData.id, newRawMaterials);
-                modal.style.display = 'none';
-            };
-            modalCancel.onclick = () => { modal.style.display = 'none'; };
-            modal.style.display = 'flex';
-        };
-
-        window.showDeleteRecipeModal = (id) => {
-            modalTitle.textContent = 'ยืนยันการลบสูตร';
-            modalBody.innerHTML = `<p>คุณแน่ใจหรือไม่ที่จะลบสูตรนี้?</p>`;
-            modalConfirm.onclick = () => {
-                deleteRecipe(id);
-                modal.style.display = 'none';
-            };
-            modalCancel.onclick = () => { modal.style.display = 'none'; };
-            modal.style.display = 'flex';
-        };
-
-        async function editRecipe(id, newRawMaterials) {
-            if (!db || !userId) return;
-            try {
-                const recipeRef = doc(db, `artifacts/${appId}/public/data/recipes`, id);
-                await updateDoc(recipeRef, { raw_materials: newRawMaterials, recordedByUserId: userId });
-                console.log("Recipe updated successfully.");
-                showToastNotification("✅ แก้ไขสูตรสำเร็จ");
-                const recipeMessage = `✏️ **สูตรถูกแก้ไข:** สูตรสำหรับ ${id} ถูกอัปเดตโดย ${userId}.`;
-                sendDiscordMessage(recipeMessage);
-            } catch (error) {
-                console.error("Error updating recipe:", error);
-            }
-        }
-        
-        async function deleteRecipe(id) {
-            if (!db || !userId) return;
-            try {
-                const recipeRef = doc(db, `artifacts/${appId}/public/data/recipes`, id);
-                await deleteDoc(recipeRef);
-                console.log("Recipe deleted successfully.");
-                showToastNotification("🗑️ ลบสูตรสำเร็จ");
-                const deleteMessage = `🗑️ **สูตรถูกลบ:** สูตรสำหรับ ${id} ถูกลบออกจากระบบ. โดย ${userId}`;
-                sendDiscordMessage(deleteMessage);
-            } catch (error) {
-                console.error("Error deleting recipe:", error);
-            }
-        }
-    </script>
 </body>
 
 </html>
