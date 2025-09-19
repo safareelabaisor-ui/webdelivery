@@ -604,6 +604,68 @@
             yearSelect.addEventListener('change', () => applyFilters());
         }
         
+        // --- GEMINI API Function to generate a report ---
+        const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=";
+        const API_KEY = ""; // Canvas provides this
+
+        async function fetchGeminiReport() {
+            const reportSection = document.getElementById('gemini-report-content');
+            const reportButton = document.getElementById('generate-report-btn');
+            
+            reportSection.innerHTML = `<p class="text-slate-500 animate-pulse">กำลังสร้างรายงาน... โปรดรอสักครู่</p>`;
+            reportButton.disabled = true;
+
+            const selectedMonth = parseInt(document.getElementById('summary-month').value);
+            const selectedYear = parseInt(document.getElementById('summary-year').value);
+
+            const monthlyTransactions = allTransactions.filter(t => {
+                const d = new Date(t.date);
+                return d.getMonth() + 1 === selectedMonth && d.getFullYear() === selectedYear;
+            });
+            
+            if (monthlyTransactions.length === 0) {
+                reportSection.innerHTML = `<p class="text-red-500">ไม่พบข้อมูลสำหรับเดือนนี้</p>`;
+                reportButton.disabled = false;
+                return;
+            }
+
+            const prompt = `
+            ฉันเป็นเจ้าของร้านอาหารเดลิเวอรี่ "โครตจะแมน" และนี่คือข้อมูลธุรกรรมของฉันสำหรับเดือน ${selectedMonth} ปี ${selectedYear}
+            ช่วยสรุปและวิเคราะห์ผลประกอบการในมุมมองของนักการเงิน โดยเน้นประเด็นสำคัญ เช่น:
+            - ภาพรวมรายรับ-รายจ่าย-กำไร
+            - ช่องทางเดลิเวอรี่ที่ทำรายได้สูงสุด
+            - ค่าใช้จ่ายหลักที่เกิดขึ้น
+            - ข้อเสนอแนะสั้นๆ ในการปรับปรุงการดำเนินงาน
+
+            นี่คือข้อมูลในรูปแบบ JSON:
+            ${JSON.stringify(monthlyTransactions, null, 2)}
+            
+            ตอบกลับเป็นภาษาไทยที่กระชับและเข้าใจง่าย
+            `;
+            
+            try {
+                const response = await fetch(GEMINI_API_URL + API_KEY, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+
+                const result = await response.json();
+                const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (text) {
+                    reportSection.innerHTML = `<p class="whitespace-pre-wrap">${text}</p>`;
+                } else {
+                    reportSection.innerHTML = `<p class="text-red-500">ไม่สามารถสร้างรายงานได้: ${JSON.stringify(result)}</p>`;
+                }
+            } catch (error) {
+                reportSection.innerHTML = `<p class="text-red-500">เกิดข้อผิดพลาดในการเชื่อมต่อ: ${error.message}</p>`;
+                console.error("Error calling Gemini API:", error);
+            } finally {
+                reportButton.disabled = false;
+            }
+        }
+        
         // Update monthly summary
         function updateMonthlySummary(transactions = []) {
             const selectedMonth = parseInt(document.getElementById('summary-month').value);
@@ -1382,6 +1444,17 @@
                         <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">กราฟแสดงสัดส่วนรายจ่าย</h3>
                         <canvas id="myExpenseChart"></canvas>
                     </div>
+                </div>
+            </section>
+            
+        <!-- Gemini-powered section -->
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">รายงานอัจฉริยะ ✨</h2>
+                <button id="generate-report-btn" class="px-8 py-3 bg-fuchsia-600 text-white font-semibold rounded-lg shadow-md hover:bg-fuchsia-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fuchsia-500 transform transition-transform duration-200 hover:scale-105">
+                    สร้างรายงานสรุปผล ✨
+                </button>
+                <div id="gemini-report-content" class="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 whitespace-pre-wrap">
+                    <p>กดปุ่มด้านบนเพื่อสร้างรายงานสรุปผลรายเดือนอัตโนมัติ</p>
                 </div>
             </section>
             
