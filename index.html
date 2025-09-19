@@ -93,8 +93,6 @@
         let filteredTransactions = []; // Store filtered transactions for display and export
         let allRecipes = [];
         let allInventory = [];
-        let allCustomers = []; // NEW: Store all customer data here
-        let rawMaterialCount = 1;
 
         // Discord Webhook URL (replace with your own)
         const DISCORD_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1417426298954846289/6DOwlCNNYkcZsJILbFhKqAvX21tp_ZulqyJji6ErC5kR24CNWdv4X-_1ktGbMI5V4ZEp";
@@ -135,6 +133,24 @@
                     }
                 });
 
+                // Login with Google
+                document.getElementById('login-btn').addEventListener('click', async () => {
+                    const provider = new GoogleAuthProvider();
+                    try {
+                        await signInWithPopup(auth, provider);
+                    } catch (error) {
+                        console.error("Error signing in with Google:", error);
+                    }
+                });
+                
+                document.getElementById('logout-btn').addEventListener('click', async () => {
+                    try {
+                        await signOut(auth);
+                    } catch (error) {
+                        console.error("Error signing out:", error);
+                    }
+                });
+
                 // Set up event listeners for filters
                 document.getElementById('search-query').addEventListener('input', applyFilters);
                 document.getElementById('filter-channel').addEventListener('change', applyFilters);
@@ -143,10 +159,10 @@
                 document.getElementById('reset-filters-btn').addEventListener('click', resetFilters);
                 document.getElementById('export-csv-btn').addEventListener('click', () => exportToCSV(filteredTransactions));
                 document.getElementById('export-excel-btn').addEventListener('click', () => exportToExcel(filteredTransactions));
-                
+
                 // Add event listener for dynamic cost calculation
                 document.getElementById('order_list').addEventListener('input', calculateRawMaterialCost);
-                document.getElementById('customer-search-query').addEventListener('input', displayCustomers);
+
 
             } else {
                 console.error("Firebase config is missing. The app cannot function without it.");
@@ -408,7 +424,6 @@
                 });
                 
                 applyFilters();
-                populateCustomers(); // NEW: Call function to populate customer list
             }, (error) => {
                 console.error("Error listening to transactions:", error);
             });
@@ -846,7 +861,7 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">ค่าส่วนลดค่าส่ง (ไม่รวม VAT)</label>
-                        <input type="number" id="modal-shipping-discount-fee-excl-vat" value="${transactionData.buyer_name}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                        <input type="number" id="modal-shipping-discount-fee-excl-vat" value="${transactionData.shipping_discount_fee_excl_vat}" class="w-full px-3 py-2 border border-gray-300 rounded-md">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">ค่า VAT</label>
@@ -1030,7 +1045,7 @@
         };
 
         // --- RECIPE & COST CALCULATION FUNCTIONS ---
-        // let rawMaterialCount = 1; // Corrected: This line was the duplicate declaration
+        let rawMaterialCount = 1;
 
         window.addRawMaterialField = () => {
             rawMaterialCount++;
@@ -1278,102 +1293,6 @@
                 console.error("Error deleting recipe:", error);
             }
         }
-
-        // --- CRM FUNCTIONS ---
-        function populateCustomers() {
-            // Group transactions by buyer name
-            const customers = {};
-            allTransactions.forEach(transaction => {
-                const buyerName = transaction.buyer_name || 'ไม่ระบุ';
-                if (!customers[buyerName]) {
-                    customers[buyerName] = {
-                        name: buyerName,
-                        totalSpent: 0,
-                        orderCount: 0,
-                        transactions: []
-                    };
-                }
-                const totalTransactionValue = (transaction.income || 0) + (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
-                customers[buyerName].totalSpent += totalTransactionValue;
-                customers[buyerName].orderCount++;
-                customers[buyerName].transactions.push(transaction);
-            });
-
-            // Sort customers by total spent
-            allCustomers = Object.values(customers).sort((a, b) => b.totalSpent - a.totalSpent);
-            displayCustomers();
-        }
-
-        function displayCustomers() {
-            const searchQuery = document.getElementById('customer-search-query').value.toLowerCase();
-            const container = document.getElementById('customer-list-container');
-            container.innerHTML = '';
-            
-            const filteredCustomers = allCustomers.filter(customer => customer.name.toLowerCase().includes(searchQuery));
-
-            if (filteredCustomers.length === 0) {
-                container.innerHTML = `<p class="text-center text-gray-500 mt-4">ไม่พบข้อมูลลูกค้า</p>`;
-            }
-
-            filteredCustomers.forEach(customer => {
-                const card = document.createElement('div');
-                card.classList.add('bg-slate-100', 'p-4', 'rounded-xl', 'shadow-sm', 'cursor-pointer', 'hover:bg-slate-200', 'transition-colors');
-                card.innerHTML = `
-                    <h4 class="text-lg font-bold text-slate-800">${customer.name}</h4>
-                    <p class="text-sm text-slate-600">จำนวนออเดอร์: <span class="font-semibold">${customer.orderCount}</span></p>
-                    <p class="text-sm text-slate-600">ยอดใช้จ่ายรวม: <span class="font-bold text-indigo-600">฿${customer.totalSpent.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
-                `;
-                card.onclick = () => showCustomerDetails(customer);
-                container.appendChild(card);
-            });
-        }
-
-        window.showCustomerDetails = (customer) => {
-            document.getElementById('customer-list-section').classList.add('hidden');
-            document.getElementById('customer-details-section').classList.remove('hidden');
-
-            const detailsContent = document.getElementById('customer-details-content');
-            detailsContent.innerHTML = `
-                <div class="bg-indigo-50 p-6 rounded-xl shadow-inner mb-6">
-                    <h3 class="text-xl font-bold text-indigo-800 mb-2">รายละเอียดลูกค้า: ${customer.name}</h3>
-                    <p><strong>จำนวนออเดอร์ทั้งหมด:</strong> ${customer.orderCount}</p>
-                    <p><strong>ยอดใช้จ่ายรวม:</strong> <span class="font-bold text-indigo-600">฿${customer.totalSpent.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
-                </div>
-                <h4 class="text-lg font-bold text-slate-800 mb-4">ประวัติการสั่งซื้อ</h4>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-slate-200">
-                        <thead class="bg-slate-50">
-                            <tr>
-                                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">วันที่</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">รายการสั่งซื้อ</th>
-                                <th class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">รายรับ</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">ช่องทาง</th>
-                            </tr>
-                        </thead>
-                        <tbody id="customer-transactions-table-body" class="bg-white divide-y divide-slate-200">
-                            <!-- Transaction rows will be injected here -->
-                        </tbody>
-                    </table>
-                </div>
-            `;
-            
-            const transactionsBody = document.getElementById('customer-transactions-table-body');
-            customer.transactions.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(transaction => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td class="px-4 py-2 whitespace-nowrap">${transaction.date.split('T')[0]}</td>
-                    <td class="px-4 py-2">${transaction.order_list || 'ไม่ระบุ'}</td>
-                    <td class="px-4 py-2 text-right">${(transaction.income || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="px-4 py-2">${transaction.channel || 'ไม่ระบุ'}</td>
-                `;
-                transactionsBody.appendChild(row);
-            });
-        };
-
-        window.backToCustomerList = () => {
-            document.getElementById('customer-list-section').classList.remove('hidden');
-            document.getElementById('customer-details-section').classList.add('hidden');
-        };
     </script>
 </head>
 
@@ -1467,6 +1386,154 @@
             </section>
             
             <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">ประวัติการทำธุรกรรม</h2>
+                <div class="flex flex-col md:flex-row gap-4 mb-4 items-end">
+                    <div class="w-full md:w-1/2">
+                        <input type="text" id="search-query" placeholder="ค้นหา: เลขออเดอร์, ชื่อผู้ซื้อ, รายการ"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div class="w-full md:w-1/4">
+                        <select id="filter-channel" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            <option value="">กรองตามช่องทางทั้งหมด</option>
+                            <option value="ShopeeFood">ShopeeFood</option>
+                            <option value="Lineman">Lineman</option>
+                            <option value="อื่นๆ">อื่นๆ</option>
+                        </select>
+                    </div>
+                    <div class="w-full md:w-auto flex-none flex gap-2">
+                        <button id="export-csv-btn" class="w-1/2 md:w-auto px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700">ดาวน์โหลด CSV</button>
+                        <button id="export-excel-btn" class="w-1/2 md:w-auto px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700">ดาวน์โหลด Excel</button>
+                        <button id="reset-filters-btn" class="w-1/2 md:w-auto px-4 py-2 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600">รีเซ็ต</button>
+                    </div>
+                </div>
+                <div class="flex flex-col md:flex-row gap-4 mb-4">
+                    <div class="w-full md:w-1/2 flex items-center gap-2">
+                        <label for="filter-start-date" class="block text-sm font-semibold text-slate-700 whitespace-nowrap">วันที่เริ่มต้น:</label>
+                        <input type="date" id="filter-start-date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div class="w-full md:w-1/2 flex items-center gap-2">
+                        <label for="filter-end-date" class="block text-sm font-semibold text-slate-700 whitespace-nowrap">วันที่สิ้นสุด:</label>
+                        <input type="date" id="filter-end-date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                </div>
+                <div class="overflow-x-auto rounded-xl shadow-sm border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">วัน/เวลา</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ช่องทาง</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">เลขออเดอร์</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ชื่อผู้ซื้อ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">คนขับ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการสั่งซื้อ</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">รายรับ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่า GP (ไม่รวม VAT)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าส่วนลด (ไม่รวม VAT)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่า VAT</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าวัตถุดิบ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าใช้จ่ายอื่นๆ (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">กำไร (บาท)</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">หมายเหตุ</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ผู้บันทึก/แก้ไข (อีเมล)</th>
+                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transaction-table-body" class="bg-white divide-y divide-slate-200">
+                            <!-- Transaction rows will be injected here by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">เพิ่มรายการใหม่</h2>
+                <form id="transaction-form" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                        <label for="date" class="block text-sm font-semibold text-slate-700 mb-1">วัน/เวลา</label>
+                        <input type="datetime-local" id="date" name="date" required
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div>
+                        <label for="channel" class="block text-sm font-semibold text-slate-700 mb-1">ช่องทาง</label>
+                        <select id="channel" name="channel" required
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            <option value="">เลือกช่องทาง</option>
+                            <option value="ShopeeFood">ShopeeFood</option>
+                            <option value="Lineman">Lineman</option>
+                            <option value="อื่นๆ">อื่นๆ</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="order_number" class="block text-sm font-semibold text-slate-700 mb-1">เลขออเดอร์</label>
+                        <input type="text" id="order_number" name="order_number" placeholder="ใส่เลขออเดอร์"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div>
+                        <label for="buyer_name" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อผู้ซื้อ</label>
+                        <input type="text" id="buyer_name" name="buyer_name" placeholder="ชื่อผู้ซื้อ"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div>
+                        <label for="driver_name" class="block text-sm font-semibold text-slate-700 mb-1">คนขับ</label>
+                        <input type="text" id="driver_name" name="driver_name" placeholder="ชื่อคนขับ"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div>
+                        <label for="item" class="block text-sm font-semibold text-slate-700 mb-1">รายการ</label>
+                        <input type="text" id="item" name="item" placeholder="เช่น ก๋วยเตี๋ยว, ข้าวผัด"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div class="md:col-span-3">
+                        <label for="order_list" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ</label>
+                        <textarea id="order_list" name="order_list" rows="3" placeholder="พิมพ์ชื่อเมนูแต่ละรายการ (บรรทัดละเมนู)&#10;ระบบจะคำนวณค่าวัตถุดิบอัตโนมัติ"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></textarea>
+                    </div>
+                    <div>
+                        <label for="income" class="block text-sm font-semibold text-slate-700 mb-1">รายรับ</label>
+                        <input type="number" id="income" name="income" step="0.01" value="0.00"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div>
+                        <label for="gp_fee_excl_vat" class="block text-sm font-semibold text-slate-700 mb-1">ค่าใช้จ่าย GP (ไม่รวม VAT)</label>
+                        <input type="number" id="gp_fee_excl_vat" name="gp_fee_excl_vat" step="0.01" value="0.00"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div>
+                        <label for="shipping_discount_fee_excl_vat" class="block text-sm font-semibold text-slate-700 mb-1">ค่าส่วนลดค่าส่ง (ไม่รวม VAT)</label>
+                        <input type="number" id="shipping_discount_fee_excl_vat" name="shipping_discount_fee_excl_vat" step="0.01" value="0.00"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div>
+                        <label for="vat_amount" class="block text-sm font-semibold text-slate-700 mb-1">ค่า VAT</label>
+                        <input type="number" id="vat_amount" name="vat_amount" step="0.01" value="0.00"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div>
+                        <label for="raw_material_cost" class="block text-sm font-semibold text-slate-700 mb-1">ค่าวัตถุดิบ (คำนวณอัตโนมัติ)</label>
+                        <input type="number" id="raw_material_cost" name="raw_material_cost" step="0.01" value="0.00" readonly disabled
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-200 shadow-sm">
+                    </div>
+                    <div>
+                        <label for="expense" class="block text-sm font-semibold text-slate-700 mb-1">ค่าใช้จ่ายอื่นๆ</label>
+                        <input type="number" id="expense" name="expense" step="0.01" value="0.00"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div class="md:col-span-3">
+                        <label for="note" class="block text-sm font-semibold text-slate-700 mb-1">หมายเหตุ</label>
+                        <input type="text" id="note" name="note" placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    </div>
+                    <div class="md:col-span-3 text-right">
+                        <button type="submit"
+                            class="mt-4 px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transform transition-transform duration-200 hover:scale-105">
+                            บันทึกรายการ
+                        </button>
+                    </div>
+                </form>
+            </section>
+            
+            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">จัดการสินค้าคงคลัง</h2>
                 <form id="inventory-form" class="grid grid-cols-1 md:grid-cols-5 gap-6">
                     <div>
@@ -1531,15 +1598,15 @@
                         <div class="flex space-x-2 items-end">
                             <div class="flex-1">
                                 <label for="raw-material-name-0" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อวัตถุดิบ</label>
-                                <input type="text" id="raw-material-name-0" name="raw_material_name" placeholder="เช่น เส้นก๋วยเตี๋ยว" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                                <input type="text" id="raw-material-name-0" name="raw_material_name" placeholder="เช่น เส้นก๋วยเตี๋ยว" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
                             </div>
                             <div class="flex-1">
                                 <label for="raw-material-quantity-0" class="block text-sm font-semibold text-slate-700 mb-1">ปริมาณ</label>
-                                <input type="number" id="raw-material-quantity-0" name="raw_material_quantity" value="1" step="0.01" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                                <input type="number" id="raw-material-quantity-0" name="raw_material_quantity" value="1" step="0.01" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
                             </div>
                             <div class="flex-1">
                                 <label for="raw-material-unit-0" class="block text-sm font-semibold text-slate-700 mb-1">หน่วย</label>
-                                <input type="text" id="raw-material-unit-0" name="raw_material_unit" placeholder="เช่น กรัม" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                                <input type="text" id="raw-material-unit-0" name="raw_material_unit" placeholder="เช่น กรัม" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
                             </div>
                             <button type="button" onclick="this.parentNode.remove()" class="px-4 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600">ลบ</button>
                         </div>
@@ -1570,93 +1637,11 @@
             </section>
 
             <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
-                <h2 class="text-2xl font-bold text-slate-800 mb-4">ระบบจัดการลูกค้า (CRM)</h2>
-                <div id="customer-list-section">
-                    <div class="mb-4">
-                        <input type="text" id="customer-search-query" placeholder="ค้นหาลูกค้าด้วยชื่อ..."
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
-                    </div>
-                    <div id="customer-list-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <!-- Customer cards will be injected here -->
-                    </div>
-                </div>
-                <div id="customer-details-section" class="hidden">
-                    <button onclick="backToCustomerList()" class="mb-4 px-4 py-2 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600">
-                        ← กลับไปหน้ารายชื่อลูกค้า
-                    </button>
-                    <div id="customer-details-content">
-                        <!-- Customer details and history will be injected here -->
-                    </div>
-                </div>
-            </section>
-            
-            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">ปฏิทินของฉัน</h2>
                 <div class="flex justify-center">
                     <iframe src="https://calendar.google.com/calendar/embed?src=68b44e6f253c9b89f4215cc51e417104f7cd236496dd26e56d8f2690998b7e04%40group.calendar.google.com&ctz=Asia%2FBangkok" 
                             style="border: 0" width="800" height="600" frameborder="0" scrolling="no" class="rounded-xl shadow-md">
                     </iframe>
-                </div>
-            </section>
-
-            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
-                <h2 class="text-2xl font-bold text-slate-800 mb-4">ประวัติการทำธุรกรรม</h2>
-                <div class="flex flex-col md:flex-row gap-4 mb-4 items-end">
-                    <div class="w-full md:w-1/2">
-                        <input type="text" id="search-query" placeholder="ค้นหา: เลขออเดอร์, ชื่อผู้ซื้อ, รายการ"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
-                    </div>
-                    <div class="w-full md:w-1/4">
-                        <select id="filter-channel" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
-                            <option value="">กรองตามช่องทางทั้งหมด</option>
-                            <option value="ShopeeFood">ShopeeFood</option>
-                            <option value="Lineman">Lineman</option>
-                            <option value="อื่นๆ">อื่นๆ</option>
-                        </select>
-                    </div>
-                    <div class="w-full md:w-auto flex-none flex gap-2">
-                        <button id="export-csv-btn" class="w-1/2 md:w-auto px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700">ดาวน์โหลด CSV</button>
-                        <button id="export-excel-btn" class="w-1/2 md:w-auto px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700">ดาวน์โหลด Excel</button>
-                        <button id="reset-filters-btn" class="w-1/2 md:w-auto px-4 py-2 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600">รีเซ็ต</button>
-                    </div>
-                </div>
-                <div class="flex flex-col md:flex-row gap-4 mb-4">
-                    <div class="w-full md:w-1/2 flex items-center gap-2">
-                        <label for="filter-start-date" class="block text-sm font-semibold text-slate-700 whitespace-nowrap">วันที่เริ่มต้น:</label>
-                        <input type="date" id="filter-start-date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
-                    </div>
-                    <div class="w-full md:w-1/2 flex items-center gap-2">
-                        <label for="filter-end-date" class="block text-sm font-semibold text-slate-700 whitespace-nowrap">วันที่สิ้นสุด:</label>
-                        <input type="date" id="filter-end-date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
-                    </div>
-                </div>
-                <div class="overflow-x-auto rounded-xl shadow-sm border border-slate-200">
-                    <table class="min-w-full divide-y divide-slate-200">
-                        <thead class="bg-slate-50">
-                            <tr>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">วัน/เวลา</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ช่องทาง</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">เลขออเดอร์</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ชื่อผู้ซื้อ</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">คนขับ</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการ</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการสั่งซื้อ</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">รายรับ (บาท)</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่า GP (ไม่รวม VAT)</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าส่วนลด (ไม่รวม VAT)</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่า VAT</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าวัตถุดิบ (บาท)</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">ค่าใช้จ่ายอื่นๆ (บาท)</th>
-                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">กำไร (บาท)</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">หมายเหตุ</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ผู้บันทึก/แก้ไข (อีเมล)</th>
-                                <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
-                            </tr>
-                        </thead>
-                        <tbody id="transaction-table-body" class="bg-white divide-y divide-slate-200">
-                            <!-- Transaction rows will be injected here by JavaScript -->
-                        </tbody>
-                    </table>
                 </div>
             </section>
 
