@@ -604,10 +604,18 @@
             yearSelect.addEventListener('change', () => applyFilters());
         }
         
-        // --- GEMINI API Function to generate a report ---
-        const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=";
-        const API_KEY = "AIzaSyBcQIuSMOCOc9JrTRqC71Fk7brep96_sHE"; // Canvas provides this
+        // Placeholder for global variables from the main app
+        const allTransactions = [
+            { date: '2025-09-01', channel: 'ShopeeFood', income: 1500, expense: 50, gp_fee_excl_vat: 150, shipping_discount_fee_excl_vat: 20, vat_amount: 10, raw_material_cost: 400, note: 'Order 101', order_number: '101' },
+            { date: '2025-09-01', channel: 'Lineman', income: 1200, expense: 30, gp_fee_excl_vat: 120, shipping_discount_fee_excl_vat: 15, vat_amount: 8.4, raw_material_cost: 350, note: 'Order 102', order_number: '102' },
+            { date: '2025-09-02', channel: 'ShopeeFood', income: 2000, expense: 60, gp_fee_excl_vat: 200, shipping_discount_fee_excl_vat: 25, vat_amount: 14, raw_material_cost: 500, note: 'Order 103', order_number: '103' },
+            { date: '2025-08-30', channel: 'อื่นๆ', income: 500, expense: 10, gp_fee_excl_vat: 0, shipping_discount_fee_excl_vat: 0, vat_amount: 0, raw_material_cost: 150, note: 'Walk-in customer', order_number: 'N/A' }
+        ];
+        const appId = "my-delivery-app-89237";
+        const API_KEY = ""; // Replace with your actual API key
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${API_KEY}`;
 
+        // Gemini API Function to generate a report
         async function fetchGeminiReport() {
             const reportSection = document.getElementById('gemini-report-content');
             const reportButton = document.getElementById('generate-report-btn');
@@ -615,8 +623,8 @@
             reportSection.innerHTML = `<p class="text-slate-500 animate-pulse">กำลังสร้างรายงาน... โปรดรอสักครู่</p>`;
             reportButton.disabled = true;
 
-            const selectedMonth = parseInt(document.getElementById('summary-month').value);
-            const selectedYear = parseInt(document.getElementById('summary-year').value);
+            const selectedMonth = new Date().getMonth() + 1; // Current month
+            const selectedYear = new Date().getFullYear(); // Current year
 
             const monthlyTransactions = allTransactions.filter(t => {
                 const d = new Date(t.date);
@@ -644,7 +652,7 @@
             `;
             
             try {
-                const response = await fetch(GEMINI_API_URL + API_KEY, {
+                const response = await fetch(GEMINI_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
@@ -665,6 +673,10 @@
                 reportButton.disabled = false;
             }
         }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('generate-report-btn').addEventListener('click', () => fetchGeminiReport());
+        });
         
         // Update monthly summary
         function updateMonthlySummary(transactions = []) {
@@ -1447,16 +1459,18 @@
                 </div>
             </section>
             
+        <div class="container mx-auto p-4 md:p-8">
         <!-- Gemini-powered section -->
-            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
-                <h2 class="text-2xl font-bold text-slate-800 mb-4">รายงานอัจฉริยะ ✨</h2>
-                <button id="generate-report-btn" class="px-8 py-3 bg-fuchsia-600 text-white font-semibold rounded-lg shadow-md hover:bg-fuchsia-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fuchsia-500 transform transition-transform duration-200 hover:scale-105">
-                    สร้างรายงานสรุปผล ✨
-                </button>
-                <div id="gemini-report-content" class="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 whitespace-pre-wrap">
-                    <p>กดปุ่มด้านบนเพื่อสร้างรายงานสรุปผลรายเดือนอัตโนมัติ</p>
-                </div>
-            </section>
+        <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+            <h2 class="text-2xl font-bold text-slate-800 mb-4">รายงานอัจฉริยะ ✨</h2>
+            <button id="generate-report-btn" class="px-8 py-3 bg-fuchsia-600 text-white font-semibold rounded-lg shadow-md hover:bg-fuchsia-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fuchsia-500 transform transition-transform duration-200 hover:scale-105">
+                สร้างรายงานสรุปผล ✨
+            </button>
+            <div id="gemini-report-content" class="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 whitespace-pre-wrap">
+                <p>กดปุ่มด้านบนเพื่อสร้างรายงานสรุปผลรายเดือนอัตโนมัติ</p>
+            </div>
+        </section>
+    </div>
             
             <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">ประวัติการทำธุรกรรม</h2>
