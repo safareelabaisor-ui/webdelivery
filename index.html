@@ -5,10 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>บัญชีเดลิเวอรี่ รายรับ-รายจ่าย ร้านโครตจะแมน</title>
-    <!-- Google Fonts: Inter -->
+    <!-- Google Fonts: Inter and Noto Sans Thai -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -16,7 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <style>
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Noto Sans Thai', 'Inter', sans-serif;
         }
 
         .modal {
@@ -66,7 +66,7 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, query, where, getDocs, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -86,91 +86,19 @@
         let app = null;
         let auth = null;
         let db = null;
-        let userEmail = null; // Changed from userId
+        let userEmail = null;
         let myChart = null;
-        let myExpenseChart = null; // New chart instance for expenses
-        let allTransactions = []; // Store all transactions here
-        let filteredTransactions = []; // Store filtered transactions for display and export
+        let myExpenseChart = null;
+        let allTransactions = [];
+        let filteredTransactions = [];
         let allRecipes = [];
         let allInventory = [];
+        let isAuthReady = false;
 
         // Discord Webhook URL (replace with your own)
         const DISCORD_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1417426298954846289/6DOwlCNNYkcZsJILbFhKqAvX21tp_ZulqyJji6ErC5kR24CNWdv4X-_1ktGbMI5V4ZEp";
-
-        document.addEventListener('DOMContentLoaded', async () => {
-            if (Object.keys(firebaseConfig).length > 0) {
-                app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                setLogLevel('Debug');
-                console.log("Firebase initialized.");
-
-                onAuthStateChanged(auth, (user) => {
-                    const loadingState = document.getElementById('loading-state');
-                    const mainContent = document.getElementById('main-content');
-                    const loginContent = document.getElementById('login-content');
-                    const logoutBtn = document.getElementById('logout-btn');
-                    const userIdDisplay = document.getElementById('user-id');
-
-                    if (user) {
-                        userEmail = user.email; // Get user email
-                        userIdDisplay.textContent = userEmail;
-                        console.log("User authenticated:", userEmail);
-                        loadingState.classList.add('hidden');
-                        loginContent.classList.add('hidden');
-                        mainContent.classList.remove('hidden');
-                        logoutBtn.classList.remove('hidden');
-                        setupDataListeners();
-                        setupInventoryListeners();
-                        setupRecipeListeners();
-                        populateMonthYearSelects();
-                    } else {
-                        console.log("No user signed in.");
-                        loadingState.classList.add('hidden');
-                        loginContent.classList.remove('hidden');
-                        mainContent.classList.add('hidden');
-                        logoutBtn.classList.add('hidden');
-                    }
-                });
-
-                // Login with Google
-                document.getElementById('login-btn').addEventListener('click', async () => {
-                    const provider = new GoogleAuthProvider();
-                    try {
-                        await signInWithPopup(auth, provider);
-                    } catch (error) {
-                        console.error("Error signing in with Google:", error);
-                    }
-                });
-                
-                document.getElementById('logout-btn').addEventListener('click', async () => {
-                    try {
-                        await signOut(auth);
-                    } catch (error) {
-                        console.error("Error signing out:", error);
-                    }
-                });
-
-                // Set up event listeners for filters
-                document.getElementById('search-query').addEventListener('input', applyFilters);
-                document.getElementById('filter-channel').addEventListener('change', applyFilters);
-                document.getElementById('filter-start-date').addEventListener('change', applyFilters);
-                document.getElementById('filter-end-date').addEventListener('change', applyFilters);
-                document.getElementById('reset-filters-btn').addEventListener('click', resetFilters);
-                document.getElementById('export-csv-btn').addEventListener('click', () => exportToCSV(filteredTransactions));
-                document.getElementById('export-excel-btn').addEventListener('click', () => exportToExcel(filteredTransactions));
-
-                // Add event listener for dynamic cost calculation
-                document.getElementById('order_list').addEventListener('input', calculateRawMaterialCost);
-
-
-            } else {
-                console.error("Firebase config is missing. The app cannot function without it.");
-                document.getElementById('loading-state').innerHTML = `<p class="text-red-500 font-bold">Error: Firebase configuration is missing.</p>`;
-                document.getElementById('loading-state').classList.remove('hidden');
-            }
-        });
-
+        
+        // Function definitions moved to top-level scope
         function showToastNotification(message, isSuccess = true) {
             const toast = document.getElementById('toast-notification');
             toast.textContent = message;
@@ -182,7 +110,6 @@
             }, 3000);
         }
         
-        // A single function to send messages to Discord
         async function sendDiscordMessage(message, embed = null) {
             if (DISCORD_WEBHOOK_URL === "https://discord.com/api/webhooks/1234567890/abcdefghijklmnopqrstuvwxyz") {
                 console.warn("Discord Webhook URL not set. Skipping notification.");
@@ -214,86 +141,7 @@
                 console.error("Error sending Discord notification:", error);
             }
         }
-
-        // Event listener for form submission
-        document.getElementById('transaction-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!db || !userEmail) {
-                console.error("Firebase is not initialized or user is not authenticated.");
-                return;
-            }
-
-            const formData = new FormData(e.target);
-            const data = {
-                timestamp: new Date(),
-                date: formData.get('date'),
-                item: formData.get('item'),
-                order_list: formData.get('order_list'),
-                channel: formData.get('channel'),
-                income: parseFloat(formData.get('income')) || 0,
-                gp_fee_excl_vat: parseFloat(formData.get('gp_fee_excl_vat')) || 0,
-                shipping_discount_fee_excl_vat: parseFloat(formData.get('shipping_discount_fee_excl_vat')) || 0,
-                vat_amount: parseFloat(formData.get('vat_amount')) || 0,
-                // Raw material cost is now from the calculated value
-                raw_material_cost: parseFloat(document.getElementById('raw_material_cost').value) || 0,
-                expense: parseFloat(formData.get('expense')) || 0,
-                note: formData.get('note'),
-                buyer_name: formData.get('buyer_name'),
-                order_id: formData.get('order_id'),
-                order_number: formData.get('order_number'),
-                driver_name: formData.get('driver_name'),
-                recordedByUserEmail: userEmail // Add the user email
-            };
-
-            try {
-                const transactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
-                await addDoc(transactionsColRef, data);
-                e.target.reset(); // Clear form after successful submission
-                // Recalculate cost after reset
-                document.getElementById('raw_material_cost').value = '0.00';
-                console.log("Transaction added successfully.");
-                showToastNotification("✅ บันทึกรายการสำเร็จ");
-                updateInventoryOnSale(data);
-                
-                const transactionMessage = `✅ **รายการใหม่ถูกบันทึก:** รายรับ ${data.income.toLocaleString()} บาท จาก ${data.channel}. โดย ${userEmail}`;
-                sendDiscordMessage(transactionMessage);
-
-            } catch (error) {
-                console.error("Error adding document: ", error);
-            }
-        });
-
-        // Inventory management form submission
-        document.getElementById('inventory-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!db || !userEmail) {
-                console.error("Firebase is not initialized or user is not authenticated.");
-                return;
-            }
-            
-            const formData = new FormData(e.target);
-            const data = {
-                name: formData.get('inventory-name'),
-                unit: formData.get('inventory-unit'),
-                current_stock: parseFloat(formData.get('inventory-stock')) || 0,
-                low_threshold: parseFloat(formData.get('inventory-threshold')) || 0,
-                cost_per_unit: parseFloat(formData.get('inventory-cost-per-unit')) || 0, // NEW
-            };
-
-            try {
-                const inventoryDocRef = doc(db, `artifacts/${appId}/public/data/inventory`, data.name);
-                await setDoc(inventoryDocRef, data);
-                e.target.reset();
-                console.log("Inventory item added/updated successfully.");
-                showToastNotification("✅ อัปเดตสต็อกสำเร็จ");
-                const inventoryMessage = `📦 **ข้อมูลสต็อกอัปเดต:** ${data.name} มีสต็อกใหม่ ${data.current_stock} ${data.unit} (ต้นทุน: ${data.cost_per_unit} บาท/หน่วย). โดย ${userEmail}`;
-                sendDiscordMessage(inventoryMessage);
-            } catch (error) {
-                console.error("Error adding/updating inventory item: ", error);
-            }
-        });
-
-        // Update inventory after a sale (Deduct raw materials)
+        
         async function updateInventoryOnSale(transactionData) {
             if (!db || !userEmail || allRecipes.length === 0) {
                 console.log("Recipes not loaded or user not authenticated. Skipping inventory deduction.");
@@ -339,10 +187,8 @@
             checkLowStock(updatedItems);
         }
         
-        // Listen for real-time inventory updates
         function setupInventoryListeners() {
-            if (!db || !userEmail) {
-                console.error("Firebase is not initialized or user is not authenticated.");
+            if (!db || !isAuthReady) {
                 return;
             }
             const inventoryColRef = collection(db, `artifacts/${appId}/public/data/inventory`);
@@ -352,11 +198,10 @@
                     allInventory.push({ id: doc.id, ...doc.data() });
                 });
                 displayInventory(allInventory);
-                checkLowStock(allInventory); // Check low stock when inventory changes
+                checkLowStock(allInventory);
             });
         }
         
-        // Check for low stock and send notification
         function checkLowStock(inventoryItems) {
             const lowStockItems = inventoryItems.filter(item => item.current_stock <= item.low_threshold);
             const lowStockAlert = document.getElementById('low-stock-alert');
@@ -365,7 +210,6 @@
                 const messages = lowStockItems.map(item => `⚠️ **${item.name}** สต็อกใกล้หมดแล้ว! มีเพียง ${item.current_stock} ${item.unit} (ต่ำกว่าเกณฑ์ ${item.low_threshold} ${item.unit})`);
                 lowStockAlert.innerHTML = messages.join('<br>');
                 lowStockAlert.classList.remove('hidden');
-                sendDiscordMessage(messages.join('\n'));
             } else {
                 lowStockAlert.classList.add('hidden');
             }
@@ -396,10 +240,8 @@
             });
         }
         
-        // Listen for real-time data updates
         function setupDataListeners() {
-            if (!db || !userEmail) {
-                console.error("Firebase is not initialized or user is not authenticated.");
+            if (!db || !isAuthReady) {
                 return;
             }
 
@@ -413,7 +255,6 @@
                     allTransactions.push({ id: doc.id, ...data, timestamp: data.timestamp ? data.timestamp.toDate() : new Date() });
                 });
 
-                // Sort transactions by date and timestamp in memory
                 allTransactions.sort((a, b) => {
                     const dateA = new Date(a.date);
                     const dateB = new Date(b.date);
@@ -429,7 +270,6 @@
             });
         }
         
-        // Apply filters to transactions
         function applyFilters() {
             const searchQuery = document.getElementById('search-query').value.toLowerCase();
             const filterChannel = document.getElementById('filter-channel').value;
@@ -459,7 +299,6 @@
             updateExpenseChart(filteredTransactions);
         }
 
-        // Reset all filters
         function resetFilters() {
             document.getElementById('search-query').value = '';
             document.getElementById('filter-channel').value = '';
@@ -468,7 +307,6 @@
             applyFilters();
         }
 
-        // Export data to CSV
         function exportToCSV(data) {
             if (data.length === 0) {
                 console.warn("No data to export.");
@@ -512,7 +350,7 @@
                     escapeCSV(transaction.recordedByUserEmail || '')
                 ].join(',');
             });
-            const BOM = "\uFEFF"; // Byte Order Mark
+            const BOM = "\uFEFF";
             const csvString = [BOM + header, ...csvRows].join('\n');
             const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
@@ -526,7 +364,6 @@
             console.log("Exported to CSV successfully.");
         }
 
-        // Export data to Excel
         function exportToExcel(data) {
             if (data.length === 0) {
                 console.warn("No data to export.");
@@ -569,7 +406,6 @@
             console.log("Exported to Excel successfully.");
         }
 
-        // Populate month and year dropdowns
         function populateMonthYearSelects() {
             const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
             const monthSelect = document.getElementById('summary-month');
@@ -604,7 +440,67 @@
             yearSelect.addEventListener('change', () => applyFilters());
         }
         
-        // Update monthly summary
+        const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=";
+        const API_KEY = "AIzaSyBcQIuSMOCOc9JrTRqC71Fk7brep96_sHE";
+
+        async function fetchGeminiReport() {
+            const reportSection = document.getElementById('gemini-report-content');
+            const reportButton = document.getElementById('generate-report-btn');
+            
+            reportSection.innerHTML = `<p class="text-slate-500 animate-pulse">กำลังสร้างรายงาน... โปรดรอสักครู่</p>`;
+            reportButton.disabled = true;
+
+            const selectedMonth = parseInt(document.getElementById('summary-month').value);
+            const selectedYear = parseInt(document.getElementById('summary-year').value);
+
+            const monthlyTransactions = allTransactions.filter(t => {
+                const d = new Date(t.date);
+                return d.getMonth() + 1 === selectedMonth && d.getFullYear() === selectedYear;
+            });
+            
+            if (monthlyTransactions.length === 0) {
+                reportSection.innerHTML = `<p class="text-red-500">ไม่พบข้อมูลสำหรับเดือนนี้</p>`;
+                reportButton.disabled = false;
+                return;
+            }
+
+            const prompt = `
+            ฉันเป็นเจ้าของร้านอาหารเดลิเวอรี่ "โครตจะแมน" และนี่คือข้อมูลธุรกรรมของฉันสำหรับเดือน ${selectedMonth} ปี ${selectedYear}
+            ช่วยสรุปและวิเคราะห์ผลประกอบการในมุมมองของนักการเงิน โดยเน้นประเด็นสำคัญ เช่น:
+            - ภาพรวมรายรับ-รายจ่าย-กำไร
+            - ช่องทางเดลิเวอรี่ที่ทำรายได้สูงสุด
+            - ค่าใช้จ่ายหลักที่เกิดขึ้น
+            - ข้อเสนอแนะสั้นๆ ในการปรับปรุงการดำเนินงาน
+
+            นี่คือข้อมูลในรูปแบบ JSON:
+            ${JSON.stringify(monthlyTransactions, null, 2)}
+            
+            ตอบกลับเป็นภาษาไทยที่กระชับและเข้าใจง่าย
+            `;
+            
+            try {
+                const response = await fetch(GEMINI_API_URL + API_KEY, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+
+                const result = await response.json();
+                const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (text) {
+                    reportSection.innerHTML = `<p class="whitespace-pre-wrap">${text}</p>`;
+                } else {
+                    reportSection.innerHTML = `<p class="text-red-500">ไม่สามารถสร้างรายงานได้: ${JSON.stringify(result)}</p>`;
+                }
+            } catch (error) {
+                reportSection.innerHTML = `<p class="text-red-500">เกิดข้อผิดพลาดในการเชื่อมต่อ: ${error.message}</p>`;
+                console.error("Error calling Gemini API:", error);
+            } finally {
+                reportButton.disabled = false;
+            }
+        }
+        
         function updateMonthlySummary(transactions = []) {
             const selectedMonth = parseInt(document.getElementById('summary-month').value);
             const selectedYear = parseInt(document.getElementById('summary-year').value);
@@ -630,7 +526,6 @@
             document.getElementById('monthly-profit').classList.add(monthlyProfit >= 0 ? 'text-emerald-600' : 'text-rose-600');
         }
 
-        // Update the income chart
         function updateChart(transactions = []) {
             const channelData = transactions.reduce((acc, transaction) => {
                 const channel = transaction.channel || 'ไม่ระบุ';
@@ -641,11 +536,11 @@
             const labels = Object.keys(channelData);
             const data = Object.values(channelData);
             const backgroundColors = [
-                'rgb(255, 159, 64)',  // Orange
-                'rgb(244, 63, 94)',   // Rose-500
-                'rgb(16, 185, 129)',  // Emerald-500
-                'rgb(245, 158, 11)',  // Amber-500
-                'rgb(59, 130, 246)'   // Blue-500
+                'rgb(255, 159, 64)',
+                'rgb(244, 63, 94)',
+                'rgb(16, 185, 129)',
+                'rgb(245, 158, 11)',
+                'rgb(59, 130, 246)'
             ];
 
             const chartData = {
@@ -688,7 +583,6 @@
             }
         }
 
-        // New function to update the expense chart
         function updateExpenseChart(transactions = []) {
             const expenseData = transactions.reduce((acc, transaction) => {
                 acc['ค่า GP'] = (acc['ค่า GP'] || 0) + (transaction.gp_fee_excl_vat || 0);
@@ -702,11 +596,11 @@
             const labels = Object.keys(expenseData);
             const data = Object.values(expenseData);
             const backgroundColors = [
-                'rgb(255, 99, 132)',  // Red
-                'rgb(99, 102, 241)',  // Indigo-500
-                'rgb(255, 205, 86)',  // Yellow
-                'rgb(75, 192, 192)',  // Green
-                'rgb(54, 162, 235)'   // Blue
+                'rgb(255, 99, 132)',
+                'rgb(99, 102, 241)',
+                'rgb(255, 205, 86)',
+                'rgb(75, 192, 192)',
+                'rgb(54, 162, 235)'
             ];
 
             const chartData = {
@@ -749,7 +643,6 @@
             }
         }
 
-        // Display transactions in the table and update summary
         function displayTransactions(transactions) {
             const tableBody = document.getElementById('transaction-table-body');
             const totalIncomeEl = document.getElementById('total-income');
@@ -771,7 +664,7 @@
 
                 const profit = (transaction.income || 0) - totalTransactionExpense;
                 const row = document.createElement('tr');
-                row.classList.add('hover:bg-gray-50', 'text-gray-700', 'text-sm');
+                row.classList.add('hover:bg-blue-100', 'text-gray-700', 'text-sm');
                 const transactionData = {
                     id: transaction.id,
                     note: transaction.note || '',
@@ -820,7 +713,6 @@
             totalProfitEl.classList.add((totalIncome - totalExpense) >= 0 ? 'text-teal-600' : 'text-rose-600');
         }
 
-        // Modal Logic
         const modal = document.getElementById('modal');
         const modalTitle = document.getElementById('modal-title');
         const modalBody = document.getElementById('modal-body');
@@ -931,7 +823,7 @@
                     order_number: newOrderNumber,
                     driver_name: newDriverName,
                     order_list: newOrderList,
-                    recordedByUserEmail: userEmail // Add the user email
+                    recordedByUserEmail: userEmail
                 });
                 console.log("Transaction updated successfully.");
                 showToastNotification("✅ แก้ไขรายการสำเร็จ");
@@ -956,7 +848,6 @@
             }
         }
         
-        // Modal functions for inventory
         window.showEditInventoryModal = (id, name, unit, current_stock, low_threshold, cost_per_unit) => {
             modalTitle.textContent = 'แก้ไขรายการสต็อก';
             modalBody.innerHTML = `
@@ -1036,15 +927,7 @@
                 console.error("Error deleting inventory document:", error);
             }
         }
-
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            if (event.target == modal) {
-                modal.style.display = 'none';
-            }
-        };
-
-        // --- RECIPE & COST CALCULATION FUNCTIONS ---
+    
         let rawMaterialCount = 1;
 
         window.addRawMaterialField = () => {
@@ -1058,11 +941,11 @@
                     <input type="text" id="raw-material-name-${rawMaterialCount}" name="raw_material_name" placeholder="เช่น ไข่ไก่" class="w-full px-3 py-2 border border-gray-300 rounded-md">
                 </div>
                 <div class="flex-1">
-                    <label for="raw-material-quantity-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">ปริมาณ</label>
                     <input type="number" id="raw-material-quantity-${rawMaterialCount}" name="raw_material_quantity" value="1" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md">
                 </div>
                 <div class="flex-1">
-                    <label for="raw-material-unit-${rawMaterialCount}" class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">หน่วย</label>
                     <input type="text" id="raw-material-unit-${rawMaterialCount}" name="raw_material_unit" placeholder="เช่น ฟอง, กรัม" class="w-full px-3 py-2 border border-gray-300 rounded-md">
                 </div>
                 <button type="button" onclick="this.parentNode.remove()" class="px-3 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600">ลบ</button>
@@ -1070,55 +953,8 @@
             container.appendChild(newField);
         };
 
-        document.getElementById('add-raw-material-btn').addEventListener('click', () => {
-            window.addRawMaterialField();
-        });
-
-        document.getElementById('recipe-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!db || !userEmail) {
-                console.error("Firebase is not initialized or user is not authenticated.");
-                return;
-            }
-
-            const finishedProduct = document.getElementById('finished-product-name').value;
-            const rawMaterials = [];
-            const rawMaterialNames = document.querySelectorAll('input[name="raw_material_name"]');
-            const rawMaterialQuantities = document.querySelectorAll('input[name="raw_material_quantity"]');
-            const rawMaterialUnits = document.querySelectorAll('input[name="raw_material_unit"]');
-
-            rawMaterialNames.forEach((nameInput, index) => {
-                rawMaterials.push({
-                    name: nameInput.value,
-                    quantity: parseFloat(rawMaterialQuantities[index].value) || 0,
-                    unit: rawMaterialUnits[index].value
-                });
-            });
-
-            const data = {
-                finished_product: finishedProduct,
-                raw_materials: rawMaterials,
-                recordedByUserEmail: userEmail
-            };
-            
-            try {
-                const recipesColRef = collection(db, `artifacts/${appId}/public/data/recipes`);
-                await setDoc(doc(recipesColRef, finishedProduct), data);
-                e.target.reset();
-                document.getElementById('raw-materials-container').innerHTML = '';
-                rawMaterialCount = 0;
-                window.addRawMaterialField();
-                console.log("Recipe saved successfully.");
-                showToastNotification("✅ บันทึกสูตรสำเร็จ");
-                const recipeMessage = `📝 **สูตรใหม่ถูกบันทึก/แก้ไข:** สูตรสำหรับ ${finishedProduct} ถูกอัปเดตโดย ${userEmail}.`;
-                sendDiscordMessage(recipeMessage);
-            } catch (error) {
-                console.error("Error saving recipe:", error);
-            }
-        });
-
         function setupRecipeListeners() {
-            if (!db || !userEmail) return;
+            if (!db || !isAuthReady) return;
             const recipesColRef = collection(db, `artifacts/${appId}/public/data/recipes`);
             onSnapshot(recipesColRef, (querySnapshot) => {
                 allRecipes = [];
@@ -1139,7 +975,6 @@
                 return;
             }
             
-            // This is a simple parsing logic, it assumes each line is one item.
             const orderListItems = orderListString.split('\n').map(item => item.trim()).filter(item => item.length > 0);
             
             orderListItems.forEach(item => {
@@ -1293,6 +1128,121 @@
                 console.error("Error deleting recipe:", error);
             }
         }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (Object.keys(firebaseConfig).length > 0) {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                setLogLevel('Debug');
+                console.log("Firebase initialized.");
+
+                onAuthStateChanged(auth, (user) => {
+                    const loadingState = document.getElementById('loading-state');
+                    const mainContent = document.getElementById('main-content');
+                    const loginContent = document.getElementById('login-content');
+                    const logoutBtn = document.getElementById('logout-btn');
+                    const userIdDisplay = document.getElementById('user-id');
+                    const registerLink = document.getElementById('register-link');
+                    const emailPasswordLogin = document.getElementById('email-password-login');
+
+                    if (user) {
+                        userEmail = user.email;
+                        userIdDisplay.textContent = userEmail;
+                        console.log("User authenticated:", userEmail);
+                        loadingState.classList.add('hidden');
+                        loginContent.classList.add('hidden');
+                        mainContent.classList.remove('hidden');
+                        logoutBtn.classList.remove('hidden');
+                        isAuthReady = true;
+                        setupDataListeners();
+                        setupInventoryListeners();
+                        setupRecipeListeners();
+                        populateMonthYearSelects();
+                    } else {
+                        console.log("No user signed in.");
+                        loadingState.classList.add('hidden');
+                        loginContent.classList.remove('hidden');
+                        mainContent.classList.add('hidden');
+                        logoutBtn.classList.add('hidden');
+                        isAuthReady = false;
+                    }
+                });
+
+                document.getElementById('login-btn').addEventListener('click', async () => {
+                    const provider = new GoogleAuthProvider();
+                    try {
+                        await signInWithPopup(auth, provider);
+                    } catch (error) {
+                        console.error("Error signing in with Google:", error);
+                        showToastNotification("❌ เข้าสู่ระบบด้วย Google ไม่สำเร็จ", false);
+                    }
+                });
+                
+                document.getElementById('logout-btn').addEventListener('click', async () => {
+                    try {
+                        await signOut(auth);
+                    } catch (error) {
+                        console.error("Error signing out:", error);
+                    }
+                });
+
+                document.getElementById('email-login-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const email = document.getElementById('email-login').value;
+                    const password = document.getElementById('password-login').value;
+                    try {
+                        await signInWithEmailAndPassword(auth, email, password);
+                        showToastNotification("✅ เข้าสู่ระบบสำเร็จ", true);
+                    } catch (error) {
+                        console.error("Error signing in with email:", error);
+                        showToastNotification("❌ เข้าสู่ระบบด้วยอีเมลไม่สำเร็จ", false);
+                    }
+                });
+
+                document.getElementById('admin-register-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const email = document.getElementById('email-register').value;
+                    const password = document.getElementById('password-register').value;
+                    try {
+                        await createUserWithEmailAndPassword(auth, email, password);
+                        showToastNotification("✅ ลงทะเบียนสำเร็จ", true);
+                    } catch (error) {
+                        console.error("Error creating user:", error);
+                        showToastNotification("❌ ลงทะเบียนไม่สำเร็จ", false);
+                    }
+                });
+
+                document.getElementById('search-query').addEventListener('input', applyFilters);
+                document.getElementById('filter-channel').addEventListener('change', applyFilters);
+                document.getElementById('filter-start-date').addEventListener('change', applyFilters);
+                document.getElementById('filter-end-date').addEventListener('change', applyFilters);
+                document.getElementById('reset-filters-btn').addEventListener('click', resetFilters);
+                document.getElementById('export-csv-btn').addEventListener('click', () => exportToCSV(filteredTransactions));
+                document.getElementById('export-excel-btn').addEventListener('click', () => exportToExcel(filteredTransactions));
+                document.getElementById('order_list').addEventListener('input', calculateRawMaterialCost);
+                document.getElementById('generate-report-btn').addEventListener('click', fetchGeminiReport);
+                
+                document.getElementById('show-register-form-btn').addEventListener('click', () => {
+                    document.getElementById('register-modal').style.display = 'flex';
+                });
+
+                document.getElementById('cancel-register-btn').addEventListener('click', () => {
+                    document.getElementById('register-modal').style.display = 'none';
+                });
+
+            } else {
+                console.error("Firebase config is missing. The app cannot function without it.");
+                document.getElementById('loading-state').innerHTML = `<p class="text-red-500 font-bold">Error: Firebase configuration is missing.</p>`;
+                document.getElementById('loading-state').classList.remove('hidden');
+            }
+        });
+
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        };
     </script>
 </head>
 
@@ -1317,12 +1267,54 @@
         </div>
         
         <div id="login-content" class="flex flex-col items-center justify-center min-h-[50vh] hidden">
-            <div class="bg-white p-8 rounded-xl shadow-xl text-center border border-slate-200">
+            <div class="bg-white p-8 rounded-xl shadow-xl text-center border border-slate-200 w-full md:w-auto max-w-md">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">ยินดีต้อนรับ</h2>
-                <p class="text-slate-600 mb-6">เข้าสู่ระบบด้วยบัญชี Google เพื่อเริ่มบันทึกข้อมูล</p>
-                <button id="login-btn" class="px-8 py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transform transition-transform duration-200 hover:scale-105">
+                <p class="text-slate-600 mb-6">เข้าสู่ระบบเพื่อจัดการข้อมูล</p>
+                
+                <!-- Google Login -->
+                <button id="login-btn" class="mb-4 w-full px-8 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition-transform duration-200">
                     เข้าสู่ระบบด้วย Google
                 </button>
+                
+                <div class="relative flex items-center justify-center my-4">
+                    <span class="absolute px-3 bg-white text-slate-500 text-sm">หรือ</span>
+                    <hr class="w-full border-t border-slate-300">
+                </div>
+
+                <!-- Email/Password Login Form -->
+                <form id="email-login-form" class="space-y-4">
+                    <input type="email" id="email-login" placeholder="อีเมล" required class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    <input type="password" id="password-login" placeholder="รหัสผ่าน" required class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                    <button type="submit" class="w-full px-8 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition-transform duration-200">
+                        เข้าสู่ระบบ
+                    </button>
+                </form>
+
+                <div class="mt-6 text-sm text-slate-600">
+                    <p>หากคุณเป็นผู้ดูแลระบบใหม่ กรุณาลงทะเบียน</p>
+                    <button id="show-register-form-btn" class="text-indigo-600 font-semibold hover:text-indigo-800 underline">ลงทะเบียนผู้ใช้ใหม่</button>
+                </div>
+            </div>
+
+            <!-- New Admin Registration Modal -->
+            <div id="register-modal" class="modal">
+                <div class="modal-content text-left">
+                    <h3 class="text-xl font-bold text-slate-800 mb-4 text-center">ลงทะเบียนผู้ดูแลระบบใหม่</h3>
+                    <form id="admin-register-form" class="space-y-4">
+                        <div>
+                            <label for="email-register" class="block text-sm font-medium text-slate-700 mb-1">อีเมล</label>
+                            <input type="email" id="email-register" required class="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                        </div>
+                        <div>
+                            <label for="password-register" class="block text-sm font-medium text-slate-700 mb-1">รหัสผ่าน</label>
+                            <input type="password" id="password-register" required minlength="6" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                        </div>
+                        <div class="flex justify-end space-x-2">
+                            <button type="button" id="cancel-register-btn" class="px-4 py-2 bg-slate-400 text-white rounded-lg hover:bg-slate-500">ยกเลิก</button>
+                            <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">ยืนยันการลงทะเบียน</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -1335,25 +1327,25 @@
                 💡 ผู้ใช้: <span id="user-id" class="font-mono break-all font-bold text-indigo-600"></span>
             </div>
 
-            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+            <section class="bg-rose-500 p-6 rounded-xl shadow-xl mb-8 border border-rose-800">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">สรุปยอดทั้งหมด</h2>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-                    <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
-                        <p class="text-lg text-slate-200">รายรับรวม</p>
-                        <p class="text-4xl font-extrabold text-emerald-400 mt-2">฿<span id="total-income">0.00</span></p>
+                    <div class="bg-rose-800 p-6 rounded-xl shadow-lg">
+                        <p class="text-lg text-rose-200">รายรับรวม</p>
+                        <p class="text-4xl font-extrabold text-lime-200 mt-2">฿<span id="total-income">0.00</span></p>
                     </div>
-                    <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
-                        <p class="text-lg text-slate-200">รายจ่ายรวม</p>
-                        <p class="text-4xl font-extrabold text-rose-400 mt-2">฿<span id="total-expense">0.00</span></p>
+                    <div class="bg-rose-800 p-6 rounded-xl shadow-lg">
+                        <p class="text-lg text-rose-200">รายจ่ายรวม</p>
+                        <p class="text-4xl font-extrabold text-white mt-2">฿<span id="total-expense">0.00</span></p>
                     </div>
-                    <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
-                        <p class="text-lg text-slate-200">กำไร/ขาดทุน</p>
-                        <p class="text-4xl font-extrabold text-white mt-2">฿<span id="total-profit">0.00</span></p>
+                    <div class="bg-rose-800 p-6 rounded-xl shadow-lg">
+                        <p class="text-lg text-rose-200">กำไร/ขาดทุน</p>
+                        <p class="text-4xl font-extrabold text-amber-200 mt-2">฿<span id="total-profit">0.00</span></p>
                     </div>
                 </div>
             </section>
             
-            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+            <section class="bg-slate-200 p-6 rounded-xl shadow-xl mb-8 border border-slate-300">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">สรุปยอดรายเดือน</h2>
                 <div class="flex flex-col sm:flex-row gap-4 mb-6">
                     <select id="summary-month" class="w-full sm:w-1/2 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></select>
@@ -1373,7 +1365,7 @@
                         <p class="text-4xl font-extrabold text-emerald-600 mt-2">฿<span id="monthly-profit">0.00</span></p>
                     </div>
                 </div>
-                 <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div>
                         <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">กราฟแสดงสัดส่วนรายรับตามช่องทาง</h3>
                         <canvas id="myChart"></canvas>
@@ -1385,15 +1377,26 @@
                 </div>
             </section>
             
+        <!-- Gemini-powered section -->
             <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">รายงานอัจฉริยะ ✨</h2>
+                <button id="generate-report-btn" class="px-8 py-3 bg-fuchsia-600 text-white font-semibold rounded-lg shadow-md hover:bg-fuchsia-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fuchsia-500 transform transition-transform duration-200 hover:scale-105">
+                    สร้างรายงานสรุปผล ✨
+                </button>
+                <div id="gemini-report-content" class="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 whitespace-pre-wrap">
+                    <p>กดปุ่มด้านบนเพื่อสร้างรายงานสรุปผลรายเดือนอัตโนมัติ</p>
+                </div>
+            </section>
+            
+            <section class="bg-blue-100 p-6 rounded-xl shadow-xl mb-8 border border-blue-200">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">ประวัติการทำธุรกรรม</h2>
                 <div class="flex flex-col md:flex-row gap-4 mb-4 items-end">
                     <div class="w-full md:w-1/2">
                         <input type="text" id="search-query" placeholder="ค้นหา: เลขออเดอร์, ชื่อผู้ซื้อ, รายการ"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div class="w-full md:w-1/4">
-                        <select id="filter-channel" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                        <select id="filter-channel" class="w-full px-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-400 text-slate-700 bg-white shadow-sm">
                             <option value="">กรองตามช่องทางทั้งหมด</option>
                             <option value="ShopeeFood">ShopeeFood</option>
                             <option value="Lineman">Lineman</option>
@@ -1409,16 +1412,16 @@
                 <div class="flex flex-col md:flex-row gap-4 mb-4">
                     <div class="w-full md:w-1/2 flex items-center gap-2">
                         <label for="filter-start-date" class="block text-sm font-semibold text-slate-700 whitespace-nowrap">วันที่เริ่มต้น:</label>
-                        <input type="date" id="filter-start-date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                        <input type="date" id="filter-start-date" class="w-full px-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div class="w-full md:w-1/2 flex items-center gap-2">
                         <label for="filter-end-date" class="block text-sm font-semibold text-slate-700 whitespace-nowrap">วันที่สิ้นสุด:</label>
-                        <input type="date" id="filter-end-date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                        <input type="date" id="filter-end-date" class="w-full px-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-400 text-slate-700 bg-white shadow-sm">
                     </div>
                 </div>
-                <div class="overflow-x-auto rounded-xl shadow-sm border border-slate-200">
-                    <table class="min-w-full divide-y divide-slate-200">
-                        <thead class="bg-slate-50">
+                <div class="overflow-x-auto rounded-xl shadow-sm border border-blue-200">
+                    <table class="min-w-full divide-y divide-blue-200">
+                        <thead class="bg-blue-200">
                             <tr>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">วัน/เวลา</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ช่องทาง</th>
@@ -1439,25 +1442,25 @@
                                 <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
                             </tr>
                         </thead>
-                        <tbody id="transaction-table-body" class="bg-white divide-y divide-slate-200">
+                        <tbody id="transaction-table-body" class="bg-white divide-y divide-blue-200">
                             <!-- Transaction rows will be injected here by JavaScript -->
                         </tbody>
                     </table>
                 </div>
             </section>
 
-            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+            <section class="bg-emerald-100 p-6 rounded-xl shadow-xl mb-8 border border-emerald-200">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">เพิ่มรายการใหม่</h2>
                 <form id="transaction-form" class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
                         <label for="date" class="block text-sm font-semibold text-slate-700 mb-1">วัน/เวลา</label>
                         <input type="datetime-local" id="date" name="date" required
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="channel" class="block text-sm font-semibold text-slate-700 mb-1">ช่องทาง</label>
                         <select id="channel" name="channel" required
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                             <option value="">เลือกช่องทาง</option>
                             <option value="ShopeeFood">ShopeeFood</option>
                             <option value="Lineman">Lineman</option>
@@ -1467,78 +1470,78 @@
                     <div>
                         <label for="order_number" class="block text-sm font-semibold text-slate-700 mb-1">เลขออเดอร์</label>
                         <input type="text" id="order_number" name="order_number" placeholder="ใส่เลขออเดอร์"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="buyer_name" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อผู้ซื้อ</label>
                         <input type="text" id="buyer_name" name="buyer_name" placeholder="ชื่อผู้ซื้อ"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="driver_name" class="block text-sm font-semibold text-slate-700 mb-1">คนขับ</label>
                         <input type="text" id="driver_name" name="driver_name" placeholder="ชื่อคนขับ"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="item" class="block text-sm font-semibold text-slate-700 mb-1">รายการ</label>
                         <input type="text" id="item" name="item" placeholder="เช่น ก๋วยเตี๋ยว, ข้าวผัด"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div class="md:col-span-3">
                         <label for="order_list" class="block text-sm font-semibold text-slate-700 mb-1">รายการสั่งซื้อ</label>
                         <textarea id="order_list" name="order_list" rows="3" placeholder="พิมพ์ชื่อเมนูแต่ละรายการ (บรรทัดละเมนู)&#10;ระบบจะคำนวณค่าวัตถุดิบอัตโนมัติ"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm"></textarea>
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm"></textarea>
                     </div>
                     <div>
                         <label for="income" class="block text-sm font-semibold text-slate-700 mb-1">รายรับ</label>
                         <input type="number" id="income" name="income" step="0.01" value="0.00"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="gp_fee_excl_vat" class="block text-sm font-semibold text-slate-700 mb-1">ค่าใช้จ่าย GP (ไม่รวม VAT)</label>
                         <input type="number" id="gp_fee_excl_vat" name="gp_fee_excl_vat" step="0.01" value="0.00"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="shipping_discount_fee_excl_vat" class="block text-sm font-semibold text-slate-700 mb-1">ค่าส่วนลดค่าส่ง (ไม่รวม VAT)</label>
                         <input type="number" id="shipping_discount_fee_excl_vat" name="shipping_discount_fee_excl_vat" step="0.01" value="0.00"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="vat_amount" class="block text-sm font-semibold text-slate-700 mb-1">ค่า VAT</label>
                         <input type="number" id="vat_amount" name="vat_amount" step="0.01" value="0.00"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="raw_material_cost" class="block text-sm font-semibold text-slate-700 mb-1">ค่าวัตถุดิบ (คำนวณอัตโนมัติ)</label>
                         <input type="number" id="raw_material_cost" name="raw_material_cost" step="0.01" value="0.00" readonly disabled
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-200 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-200 shadow-sm">
                     </div>
                     <div>
                         <label for="expense" class="block text-sm font-semibold text-slate-700 mb-1">ค่าใช้จ่ายอื่นๆ</label>
                         <input type="number" id="expense" name="expense" step="0.01" value="0.00"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div class="md:col-span-3">
                         <label for="note" class="block text-sm font-semibold text-slate-700 mb-1">หมายเหตุ</label>
                         <input type="text" id="note" name="note" placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div class="md:col-span-3 text-right">
                         <button type="submit"
-                            class="mt-4 px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transform transition-transform duration-200 hover:scale-105">
+                            class="mt-4 px-8 py-3 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transform transition-transform duration-200 hover:scale-105">
                             บันทึกรายการ
                         </button>
                     </div>
                 </form>
             </section>
             
-            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+            <section class="bg-yellow-100 p-6 rounded-xl shadow-xl mb-8 border border-yellow-200">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">จัดการสูตรวัตถุดิบ</h2>
                 <form id="recipe-form" class="space-y-4">
                     <div>
                         <label for="finished-product-name" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อเมนู/สินค้าสำเร็จรูป</label>
-                        <input type="text" id="finished-product-name" placeholder="เช่น ก๋วยเตี๋ยว" required class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 text-slate-700 bg-slate-50 shadow-sm">
+                        <input type="text" id="finished-product-name" placeholder="เช่น ก๋วยเตี๋ยว" required class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-yellow-200 focus:border-yellow-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div id="raw-materials-container" class="space-y-2">
                         <!-- Raw material inputs will be added here -->
@@ -1567,49 +1570,49 @@
                         </button>
                     </div>
                 </form>
-                <div class="overflow-x-auto mt-8 rounded-xl shadow-sm border border-slate-200">
-                    <table class="min-w-full divide-y divide-slate-200">
-                        <thead class="bg-slate-50">
+                <div class="overflow-x-auto mt-8 rounded-xl shadow-sm border border-yellow-200">
+                    <table class="min-w-full divide-y divide-yellow-200">
+                        <thead class="bg-yellow-200">
                             <tr>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">เมนู/สินค้า</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">สูตรวัตถุดิบ</th>
                                 <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
                             </tr>
                         </thead>
-                        <tbody id="recipe-table-body" class="bg-white divide-y divide-slate-200">
+                        <tbody id="recipe-table-body" class="bg-white divide-y divide-yellow-200">
                             <!-- Recipe rows will be injected here by JavaScript -->
                         </tbody>
                     </table>
                 </div>
             </section>
 
-            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+            <section class="bg-orange-100 p-6 rounded-xl shadow-xl mb-8 border border-orange-200">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">จัดการสินค้าคงคลัง</h2>
                 <form id="inventory-form" class="grid grid-cols-1 md:grid-cols-5 gap-6">
                     <div>
                         <label for="inventory-name" class="block text-sm font-semibold text-slate-700 mb-1">ชื่อวัตถุดิบ</label>
                         <input type="text" id="inventory-name" name="inventory-name" required placeholder="เช่น ไข่ไก่, เส้นก๋วยเตี๋ยว"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="inventory-unit" class="block text-sm font-semibold text-slate-700 mb-1">หน่วยนับ</label>
                         <input type="text" id="inventory-unit" name="inventory-unit" required placeholder="เช่น ฟอง, กิโลกรัม"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="inventory-stock" class="block text-sm font-semibold text-slate-700 mb-1">สต็อกปัจจุบัน</label>
                         <input type="number" id="inventory-stock" name="inventory-stock" step="1" required value="0"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="inventory-threshold" class="block text-sm font-semibold text-slate-700 mb-1">เกณฑ์แจ้งเตือนสต็อกต่ำ</label>
                         <input type="number" id="inventory-threshold" name="inventory-threshold" step="1" required value="0"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div>
                         <label for="inventory-cost-per-unit" class="block text-sm font-semibold text-slate-700 mb-1">ต้นทุนต่อหน่วย (บาท)</label>
                         <input type="number" id="inventory-cost-per-unit" name="inventory-cost-per-unit" step="0.01" required value="0.00"
-                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-slate-50 shadow-sm">
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div class="md:col-span-5 text-right">
                         <button type="submit" class="mt-4 px-8 py-3 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transform transition-transform duration-200 hover:scale-105">
@@ -1617,9 +1620,9 @@
                         </button>
                     </div>
                 </form>
-                <div class="overflow-x-auto mt-8 rounded-xl shadow-sm border border-slate-200">
-                    <table class="min-w-full divide-y divide-slate-200">
-                        <thead class="bg-slate-50">
+                <div class="overflow-x-auto mt-8 rounded-xl shadow-sm border border-orange-200">
+                    <table class="min-w-full divide-y divide-orange-200">
+                        <thead class="bg-orange-200">
                             <tr>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ชื่อวัตถุดิบ</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">หน่วยนับ</th>
@@ -1629,7 +1632,7 @@
                                 <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">จัดการ</th>
                             </tr>
                         </thead>
-                        <tbody id="inventory-table-body" class="bg-white divide-y divide-slate-200">
+                        <tbody id="inventory-table-body" class="bg-white divide-y divide-orange-200">
                             <!-- Inventory rows will be injected here by JavaScript -->
                         </tbody>
                     </table>
@@ -1638,7 +1641,7 @@
             
             
 
-            <section class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
+            <section class="bg-purple-300 p-6 rounded-xl shadow-xl mb-8 border border-slate-200">
                 <h2 class="text-2xl font-bold text-slate-800 mb-4">ปฏิทินของฉัน</h2>
                 <div class="flex justify-center">
                     <iframe src="https://calendar.google.com/calendar/embed?src=68b44e6f253c9b89f4215cc51e417104f7cd236496dd26e56d8f2690998b7e04%40group.calendar.google.com&ctz=Asia%2FBangkok" 
