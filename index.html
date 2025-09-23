@@ -89,6 +89,7 @@
         let userEmail = null;
         let myChart = null;
         let myExpenseChart = null;
+        let myProfitChart = null; // New chart for profit/loss
         let allTransactions = [];
         let filteredTransactions = [];
         let allRecipes = [];
@@ -297,6 +298,7 @@
             updateMonthlySummary(filteredTransactions);
             updateChart(filteredTransactions);
             updateExpenseChart(filteredTransactions);
+            updateProfitChart(filteredTransactions);
         }
 
         function resetFilters() {
@@ -618,6 +620,67 @@
             } else {
                 const ctx = document.getElementById('myExpenseChart').getContext('2d');
                 myExpenseChart = new Chart(ctx, {
+                    type: 'pie',
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.label || '';
+                                        const value = context.parsed;
+                                        const total = context.dataset.data.reduce((sum, current) => sum + current, 0);
+                                        const percentage = ((value / total) * 100).toFixed(2);
+                                        return `${label}: ${value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        // New function to update the profit/loss chart
+        function updateProfitChart(transactions = []) {
+            const profitLossData = transactions.reduce((acc, transaction) => {
+                const totalTransactionExpense = (transaction.expense || 0) + (transaction.gp_fee_excl_vat || 0) + (transaction.shipping_discount_fee_excl_vat || 0) + (transaction.vat_amount || 0) + (transaction.raw_material_cost || 0);
+                const profit = (transaction.income || 0) - totalTransactionExpense;
+                
+                if (profit >= 0) {
+                    acc['กำไร'] = (acc['กำไร'] || 0) + profit;
+                } else {
+                    acc['ขาดทุน'] = (acc['ขาดทุน'] || 0) + Math.abs(profit);
+                }
+                return acc;
+            }, {});
+
+            const labels = Object.keys(profitLossData);
+            const data = Object.values(profitLossData);
+            const backgroundColors = [
+                'rgb(75, 192, 192)', // Light Green for Profit
+                'rgb(255, 99, 132)'  // Light Red for Loss
+            ];
+
+            const chartData = {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: backgroundColors,
+                    hoverOffset: 4
+                }]
+            };
+
+            if (myProfitChart) {
+                myProfitChart.data = chartData;
+                myProfitChart.update();
+            } else {
+                const ctx = document.getElementById('myProfitChart').getContext('2d');
+                myProfitChart = new Chart(ctx, {
                     type: 'pie',
                     data: chartData,
                     options: {
@@ -1365,7 +1428,7 @@
                         <p class="text-4xl font-extrabold text-emerald-600 mt-2">฿<span id="monthly-profit">0.00</span></p>
                     </div>
                 </div>
-                <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div>
                         <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">กราฟแสดงสัดส่วนรายรับตามช่องทาง</h3>
                         <canvas id="myChart"></canvas>
@@ -1373,6 +1436,10 @@
                     <div>
                         <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">กราฟแสดงสัดส่วนรายจ่าย</h3>
                         <canvas id="myExpenseChart"></canvas>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">กราฟแสดงสัดส่วน กำไร/ขาดทุน</h3>
+                        <canvas id="myProfitChart"></canvas>
                     </div>
                 </div>
             </section>
