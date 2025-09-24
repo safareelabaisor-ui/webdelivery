@@ -89,7 +89,7 @@
         let userEmail = null;
         let myChart = null;
         let myExpenseChart = null;
-        let myProfitChart = null; // New chart for profit/loss
+        let myProfitChart = null;
         let allTransactions = [];
         let filteredTransactions = [];
         let allRecipes = [];
@@ -153,7 +153,6 @@
             const inventoryColRef = collection(db, `artifacts/${appId}/public/data/inventory`);
             
             allRecipes.forEach(async (recipe) => {
-                // Check if the finished product is in the order list
                 if (orderList.includes(recipe.finished_product.toLowerCase())) {
                     console.log(`Matching recipe found for: ${recipe.finished_product}`);
                     const inventorySnapshot = await getDocs(inventoryColRef);
@@ -162,7 +161,6 @@
                         inventoryItems[doc.data().name.toLowerCase()] = { id: doc.id, ...doc.data() };
                     });
 
-                    // Deduct each raw material from the recipe
                     recipe.raw_materials.forEach(async (rawMaterial) => {
                         const materialNameLower = rawMaterial.name.toLowerCase();
                         if (inventoryItems[materialNameLower]) {
@@ -179,7 +177,6 @@
                 }
             });
 
-            // Re-check low stock after every sale
             const inventorySnapshot = await getDocs(inventoryColRef);
             const updatedItems = [];
             inventorySnapshot.forEach(doc => {
@@ -1301,6 +1298,140 @@
             }
         });
 
+        document.getElementById('transaction-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            console.log("Form submission initiated.");
+            const submitBtn = document.getElementById('submit-transaction-btn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'กำลังบันทึก...';
+
+            if (!db || !userEmail) {
+                console.error("Firebase is not initialized or user is not authenticated.");
+                showToastNotification("❌ ไม่สามารถบันทึกได้ กรุณาเข้าสู่ระบบ", false);
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'บันทึกรายการ';
+                return;
+            }
+
+            const formData = new FormData(e.target);
+            const data = {
+                timestamp: new Date(),
+                date: formData.get('date'),
+                item: formData.get('item'),
+                order_list: formData.get('order_list'),
+                channel: formData.get('channel'),
+                income: parseFloat(formData.get('income')) || 0,
+                gp_fee_excl_vat: parseFloat(formData.get('gp_fee_excl_vat')) || 0,
+                shipping_discount_fee_excl_vat: parseFloat(formData.get('shipping_discount_fee_excl_vat')) || 0,
+                vat_amount: parseFloat(formData.get('vat_amount')) || 0,
+                raw_material_cost: parseFloat(document.getElementById('raw_material_cost').value) || 0,
+                expense: parseFloat(formData.get('expense')) || 0,
+                note: formData.get('note'),
+                buyer_name: formData.get('buyer_name'),
+                order_id: formData.get('order_id'),
+                order_number: formData.get('order_number'),
+                driver_name: formData.get('driver_name'),
+                recordedByUserEmail: userEmail
+            };
+
+            try {
+                const transactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
+                await addDoc(transactionsColRef, data);
+                e.target.reset();
+                document.getElementById('raw_material_cost').value = '0.00';
+                console.log("Transaction added successfully.");
+                showToastNotification("✅ บันทึกรายการสำเร็จ");
+                updateInventoryOnSale(data);
+                
+                const transactionMessage = `✅ **รายการใหม่ถูกบันทึก:** รายรับ ${data.income.toLocaleString()} บาท จาก ${data.channel}. โดย ${userEmail}`;
+                sendDiscordMessage(transactionMessage);
+
+            } catch (error) {
+                console.error("Error adding document: ", error);
+                showToastNotification("❌ บันทึกรายการไม่สำเร็จ", false);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'บันทึกรายการ';
+            }
+        });
+
+        // Inventory management form submission
+        document.getElementById('inventory-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!db || !userEmail) {
+                console.error("Firebase is not initialized or user is not authenticated.");
+                return;
+            }
+            
+            const formData = new FormData(e.target);
+            const data = {
+                name: formData.get('inventory-name'),
+                unit: formData.get('inventory-unit'),
+                current_stock: parseFloat(formData.get('inventory-stock')) || 0,
+                low_threshold: parseFloat(formData.get('inventory-threshold')) || 0,
+                cost_per_unit: parseFloat(formData.get('inventory-cost-per-unit')) || 0, // NEW
+            };
+
+            try {
+                const inventoryDocRef = doc(db, `artifacts/${appId}/public/data/inventory`, data.name);
+                await setDoc(inventoryDocRef, data);
+                e.target.reset();
+                console.log("Inventory item added/updated successfully.");
+                showToastNotification("✅ อัปเดตสต็อกสำเร็จ");
+                const inventoryMessage = `📦 **ข้อมูลสต็อกอัปเดต:** ${data.name} มีสต็อกใหม่ ${data.current_stock} ${data.unit} (ต้นทุน: ${data.cost_per_unit} บาท/หน่วย). โดย ${userEmail}`;
+                sendDiscordMessage(inventoryMessage);
+            } catch (error) {
+                console.error("Error adding/updating inventory item: ", error);
+            }
+        });
+
+        document.getElementById('add-raw-material-btn').addEventListener('click', () => {
+            window.addRawMaterialField();
+        });
+
+        document.getElementById('recipe-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!db || !userEmail) {
+                console.error("Firebase is not initialized or user is not authenticated.");
+                return;
+            }
+
+            const finishedProduct = document.getElementById('finished-product-name').value;
+            const rawMaterials = [];
+            const rawMaterialNames = document.querySelectorAll('input[name="raw_material_name"]');
+            const rawMaterialQuantities = document.querySelectorAll('input[name="raw_material_quantity"]');
+            const rawMaterialUnits = document.querySelectorAll('input[name="raw_material_unit"]');
+
+            rawMaterialNames.forEach((nameInput, index) => {
+                rawMaterials.push({
+                    name: nameInput.value,
+                    quantity: parseFloat(rawMaterialQuantities[index].value) || 0,
+                    unit: rawMaterialUnits[index].value
+                });
+            });
+
+            const data = {
+                finished_product: finishedProduct,
+                raw_materials: rawMaterials,
+                recordedByUserEmail: userEmail
+            };
+            
+            try {
+                const recipesColRef = collection(db, `artifacts/${appId}/public/data/recipes`);
+                await setDoc(doc(recipesColRef, finishedProduct), data);
+                e.target.reset();
+                document.getElementById('raw-materials-container').innerHTML = '';
+                rawMaterialCount = 0;
+                window.addRawMaterialField();
+                console.log("Recipe saved successfully.");
+                showToastNotification("✅ บันทึกสูตรสำเร็จ");
+                const recipeMessage = `📝 **สูตรใหม่ถูกบันทึก/แก้ไข:** สูตรสำหรับ ${finishedProduct} ถูกอัปเดตโดย ${userEmail}.`;
+                sendDiscordMessage(recipeMessage);
+            } catch (error) {
+                console.error("Error saving recipe:", error);
+            }
+        });
+
         window.onclick = function(event) {
             if (event.target == modal) {
                 modal.style.display = 'none';
@@ -1595,7 +1726,7 @@
                             class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 text-slate-700 bg-white shadow-sm">
                     </div>
                     <div class="md:col-span-3 text-right">
-                        <button type="submit"
+                        <button type="submit" id="submit-transaction-btn"
                             class="mt-4 px-8 py-3 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transform transition-transform duration-200 hover:scale-105">
                             บันทึกรายการ
                         </button>
